@@ -1,13 +1,17 @@
-/* Bundled separately (dist/plugin/monaco.js) and loaded only while an editor is open. */
-import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
-import 'monaco-editor/esm/vs/editor/editor.all';
-import 'monaco-editor/esm/vs/basic-languages/yaml/yaml.contribution';
-import { conf as yamlConf, language as yamlTokens } from 'monaco-editor/esm/vs/basic-languages/yaml/yaml';
+/* Editor glue. init() receives Monaco from MonacoLoader. */
+import type * as monaco from 'monaco-editor/editor/editor.api';
 import { ITEM_SNIPPETS, collectScalars, completeAt, definitionAt, docsAt, itemListAt, renameAt } from '../schema/complete';
 import { lintSource, srcOf } from '../schema';
 import { formatSource } from '../schema/format';
 import { FLOW_TEMPLATE } from '../core/template';
 import { toMonacoSnippet } from './snippet';
+
+type Monaco = typeof monaco;
+export interface YamlDefinition { conf: monaco.languages.LanguageConfiguration; language: monaco.languages.IMonarchLanguage }
+let mo: Monaco;
+let yaml: YamlDefinition;
+/** Gives the glue the Monaco API. Call before mount(). */
+export function init(api: Monaco, yamlDefinition: YamlDefinition) { mo = api; yaml = yamlDefinition; }
 
 const OWNER = 'flowmotion';
 /** Own language id: the DSL gets its own providers instead of sharing Monaco's generic `yaml`. */
@@ -29,7 +33,7 @@ const fixes = new WeakMap<monaco.editor.ITextModel, Map<string, string>>();
 const key = (r: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }) => `${r.startLineNumber}:${r.startColumn}:${r.endLineNumber}:${r.endColumn}`;
 const rangeAt = (m: monaco.editor.ITextModel, from: number, to: number) => {
   const a = m.getPositionAt(from), b = m.getPositionAt(to);
-  return new monaco.Range(a.lineNumber, a.column, b.lineNumber, b.column);
+  return new mo.Range(a.lineNumber, a.column, b.lineNumber, b.column);
 };
 const fileExistsFor = new WeakMap<monaco.editor.ITextModel, MountOptions['fileExists']>();
 
@@ -37,11 +41,11 @@ const fileExistsFor = new WeakMap<monaco.editor.ITextModel, MountOptions['fileEx
 let providers: monaco.IDisposable[] = [];
 let users = 0;
 function registerProviders() {
-  const L = monaco.languages;
+  const L = mo.languages;
   if (!L.getLanguages().some((l) => l.id === LANG)) {
     L.register({ id: LANG, aliases: ['FlowMotion'], extensions: ['.flow'] });
-    L.setMonarchTokensProvider(LANG, yamlTokens);
-    L.setLanguageConfiguration(LANG, yamlConf);
+    L.setMonarchTokensProvider(LANG, yaml.language);
+    L.setLanguageConfiguration(LANG, yaml.conf);
   }
   const fullRange = (m: monaco.editor.ITextModel) => m.getFullModelRange();
   providers = [
@@ -137,7 +141,7 @@ function registerProviders() {
         const map = fixes.get(model);
         const actions = context.markers.filter((m) => m.source === 'FlowMotion' && map?.has(key(m))).map((m) => ({
           title: `Change to "${map!.get(key(m))!.replace(/^["']|["']$/g, '')}"`, kind: 'quickfix', isPreferred: true, diagnostics: [m],
-          edit: { edits: [{ resource: model.uri, versionId: undefined, textEdit: { range: new monaco.Range(m.startLineNumber, m.startColumn, m.endLineNumber, m.endColumn), text: map!.get(key(m))! } }] },
+          edit: { edits: [{ resource: model.uri, versionId: undefined, textEdit: { range: new mo.Range(m.startLineNumber, m.startColumn, m.endLineNumber, m.endColumn), text: map!.get(key(m))! } }] },
         }));
         return { actions, dispose() {} };
       },
@@ -149,7 +153,7 @@ function validate(model: monaco.editor.ITextModel) {
   const text = model.getValue();
   const map = new Map<string, string>();
   const markers: monaco.editor.IMarkerData[] = [];
-  const sev = monaco.MarkerSeverity;
+  const sev = mo.MarkerSeverity;
   const ref = srcOf(text);
   if (ref && fileExistsFor.get(model)?.(ref.path) === false) {
     const r = rangeAt(model, ref.from, ref.to);
@@ -162,7 +166,7 @@ function validate(model: monaco.editor.ITextModel) {
     if (i.fix) { const q = /^["']/.test(text.slice(i.from, i.to)) ? text[i.from]! : ''; map.set(key(m), `${q}${i.fix}${q}`); }
   }
   fixes.set(model, map);
-  monaco.editor.setModelMarkers(model, OWNER, markers);
+  mo.editor.setModelMarkers(model, OWNER, markers);
 }
 
 let seq = 0;
@@ -170,13 +174,13 @@ export function mount(host: HTMLElement, opts: MountOptions): Handle {
   if (users++ === 0) registerProviders();
   const c = opts.colors;
   const theme = `fm-${opts.dark ? 'dark' : 'light'}`;
-  monaco.editor.defineTheme(theme, {
+  mo.editor.defineTheme(theme, {
     base: opts.dark ? 'vs-dark' : 'vs', inherit: true, rules: [],
     colors: { 'editor.background': c.bg, 'editor.foreground': c.fg, 'editorLineNumber.foreground': c.muted, 'editorGutter.background': c.bg, 'editorWidget.background': c.bg, 'editorWidget.border': c.border, 'editor.lineHighlightBackground': opts.dark ? '#ffffff0d' : '#0000000a' },
   });
-  const model = monaco.editor.createModel(opts.value, LANG, monaco.Uri.parse(`inmemory://flowmotion/${++seq}.yaml`));
+  const model = mo.editor.createModel(opts.value, LANG, mo.Uri.parse(`inmemory://flowmotion/${++seq}.yaml`));
   fileExistsFor.set(model, opts.fileExists);
-  const editor = monaco.editor.create(host, {
+  const editor = mo.editor.create(host, {
     model, theme, automaticLayout: true, minimap: { enabled: false }, scrollBeyondLastLine: false, tabSize: 2, insertSpaces: true,
     fontFamily: c.font, fontSize: 13, lineNumbersMinChars: 3, glyphMargin: true, folding: true, renderLineHighlight: 'line',
     quickSuggestions: { other: true, strings: true, comments: false }, wordBasedSuggestions: 'off', suggestOnTriggerCharacters: true,
@@ -198,7 +202,7 @@ export function mount(host: HTMLElement, opts: MountOptions): Handle {
     dispose() {
       window.clearTimeout(timer);
       sub.dispose();
-      monaco.editor.setModelMarkers(model, OWNER, []);
+      mo.editor.setModelMarkers(model, OWNER, []);
       editor.dispose();
       model.dispose();
       if (--users === 0) { providers.forEach((p) => p.dispose()); providers = []; }
@@ -209,6 +213,6 @@ export function mount(host: HTMLElement, opts: MountOptions): Handle {
 /** Drop everything Monaco created globally so the bundle can be garbage-collected. */
 export function purge() {
   providers.forEach((p) => p.dispose()); providers = []; users = 0;
-  monaco.editor.getModels().forEach((m) => m.dispose());
-  monaco.editor.getEditors().forEach((e) => e.dispose());
+  mo.editor.getModels().forEach((m) => m.dispose());
+  mo.editor.getEditors().forEach((e) => e.dispose());
 }

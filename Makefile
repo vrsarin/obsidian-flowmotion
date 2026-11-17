@@ -18,11 +18,11 @@ VAULT ?= /Users/viveksarin/Documents/Obsidian Vault
 
 help:
 	@echo "Build and check"
-	@echo "  make build              Build main.js, styles.css and the Monaco add-on"
+	@echo "  make build              Build main.js and styles.css"
 	@echo "  make test               Run the unit tests"
 	@echo "  make test-e2e           Run the end-to-end tests"
 	@echo "  make lint               Run ESLint with the Obsidian rules"
-	@echo "  make release-build      Fetch draw.io and build the plugin and optional add-ons locally"
+	@echo "  make release-build      Install dependencies and build the plugin"
 	@echo "  make release-check      Check the version and plugin files are ready to publish (TAG=0.1.0)"
 	@echo "  make install-plugin     Copy the plugin into VAULT=\"/path/to/vault\""
 	@echo ""
@@ -56,7 +56,6 @@ lint:
 
 release-build:
 	$(NPM) ci
-	$(NPM) run fetch-drawio
 	$(NPM) run build
 
 release-check:

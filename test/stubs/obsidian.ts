@@ -55,7 +55,9 @@ export class Setting {
 
 export class ToggleComponent {
   value = false; handler: (v: boolean) => unknown = () => undefined;
+  disabled = false;
   setValue(v: boolean) { this.value = v; return this; }
+  setDisabled(d: boolean) { this.disabled = d; return this; }
   onChange(fn: (v: boolean) => unknown) { this.handler = fn; return this; }
 }
 export class DropdownComponent {

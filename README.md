@@ -85,20 +85,12 @@ Full syntax: [Writing diagrams](https://github.com/vrsarin/obsidian-flowmotion/w
 
 ## Optional add-ons
 
-FlowMotion works out of the box. The optional desktop editors are built from their upstream sources and are not included in FlowMotion releases:
+FlowMotion works out of the box. The optional draw.io editor is downloaded from its upstream project when you turn it on, and is not part of FlowMotion releases:
 
-- **draw.io editor** for `.drawio.flow` files (desktop app only).
-- **Code editor** (Monaco) with syntax help for diagram code (desktop app only).
+- **draw.io editor** for `.drawio.flow` files, downloaded as the current `draw.war` from the [draw.io GitHub releases](https://github.com/jgraph/drawio/releases) (about 42 MB installed).
+To use it, open FlowMotion settings and turn it on. FlowMotion downloads it into the plugin folder (a network connection is needed once). Turn it off to delete the files. It works on the desktop app only.
 
-The build downloads draw.io from the [draw.io source repository](https://github.com/jgraph/drawio) and Monaco from the [`monaco-editor` npm package](https://www.npmjs.com/package/monaco-editor). From the FlowMotion source folder, run these commands before installing the plugin:
-
-```bash
-npm run fetch-drawio
-npm run build
-npm run install-plugin -- "/path/to/your/vault"
-```
-
-Then open FlowMotion settings and turn on the add-on you want. Without the files, FlowMotion uses a plain text box for code editing and shows a notice for draw.io files. draw.io and Monaco are licensed under Apache-2.0 and MIT; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+The **Code editor** setting (Monaco, with syntax help for diagram code) needs no download: Monaco is built into `main.js`. On mobile, or when the setting is off, FlowMotion uses a plain text box. draw.io and Monaco are licensed under Apache-2.0 and MIT; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Advanced
 
