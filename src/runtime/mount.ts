@@ -34,9 +34,10 @@ function button(create: ElementFactory, label: string, text: string, onClick: ()
 export function mountModel(container: HTMLElement, model: Model, opts: MountOptions = {}): Mounted {
   const doc = container.ownerDocument;
   const win = doc.defaultView ?? window;
-  const fragment = doc.createDocumentFragment();
-  // The runtime also runs in standalone HTML, where Obsidian's DOM helpers do not exist.
-  const create: ElementFactory = (tag) => typeof fragment.createEl === 'function' ? fragment.createEl(tag) : doc.createElement(tag);
+  // Standalone HTML and iframe windows do not have Obsidian's DOM helpers.
+  const create: ElementFactory = (tag) => doc.defaultView && typeof doc.defaultView.createEl === 'function'
+    ? doc.defaultView.createEl(tag)
+    : doc.createElement(tag);
   const prefix = `fm${++counter}`;
   const wrap = create('div');
   wrap.className = 'fm-wrap';

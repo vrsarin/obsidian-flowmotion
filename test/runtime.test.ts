@@ -7,11 +7,14 @@ describe('browser runtime', () => {
   it('mounts a model using standard DOM APIs', async () => {
     const model = await buildModel('nodes: [{ id: a }]');
     const container = document.createElement('div');
-    const mounted = mountModel(container, model, { theme: 'light', autoplay: false });
-    expect(container.querySelector('.fm-wrap svg')).not.toBeNull();
-    expect(container.querySelector('.fm-controls button')).not.toBeNull();
-    mounted.destroy();
-    expect(container.querySelector('.fm-wrap')).toBeNull();
+    vi.stubGlobal('createEl', undefined);
+    try {
+      const mounted = mountModel(container, model, { theme: 'light', autoplay: false });
+      expect(container.querySelector('.fm-wrap svg')).not.toBeNull();
+      expect(container.querySelector('.fm-controls button')).not.toBeNull();
+      mounted.destroy();
+      expect(container.querySelector('.fm-wrap')).toBeNull();
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it('updates diagram sizing and playback toggle state without overriding fullscreen styles', async () => {
@@ -37,22 +40,11 @@ describe('browser runtime', () => {
 
   it('uses Obsidian DOM helpers when available', async () => {
     const model = await buildModel('nodes: [{ id: a }]');
-    const makeFragment = document.createDocumentFragment.bind(document);
-    let created = 0;
-    const spy = vi.spyOn(document, 'createDocumentFragment').mockImplementation(() => {
-      const fragment = makeFragment();
-      fragment.createEl = <K extends keyof HTMLElementTagNameMap>(tag: K) => {
-        created++;
-        const element = document.createElement(tag);
-        fragment.appendChild(element);
-        return element;
-      };
-      return fragment;
-    });
+    const spy = vi.spyOn(window, 'createEl');
     try {
       const container = document.createElement('div');
       const mounted = mountModel(container, model, { autoplay: false });
-      expect(created).toBeGreaterThan(1);
+      expect(spy).toHaveBeenCalled();
       expect(container.querySelector('.fm-wrap svg')).not.toBeNull();
       expect(container.querySelector('.fm-controls button')).not.toBeNull();
       mounted.destroy();
