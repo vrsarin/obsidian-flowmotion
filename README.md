@@ -94,8 +94,8 @@ The **Code editor** setting (Monaco, with syntax help for diagram code) needs no
 
 ## Data access
 
-- The diagram picker lists vault folders and `.flow` files. Path completion searches vault file names for `.flow`, YAML, and JSON files.
-- The optional Monaco code editor includes clipboard support for editing and clipboard-aware suggestions. FlowMotion does not call the clipboard API directly.
+- Opening the diagram picker enumerates `.flow` files; it enumerates vault folders when showing the new-file destination list. Filtering the picker uses that opening-time file list. Path completion searches vault file names for `.flow`, YAML, and JSON files only when completing a `src:` path.
+- The optional bundled Monaco code editor includes clipboard support for editing and clipboard-aware suggestions. FlowMotion does not call the clipboard API directly.
 - The optional draw.io editor is downloaded into the plugin folder through the vault adapter. A local server bound to `127.0.0.1` serves those files to the editor.
 
 ## Advanced

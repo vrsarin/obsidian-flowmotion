@@ -20,22 +20,22 @@ class FileDialog extends Modal {
   private folder: string;
   private query = '';
   private body!: HTMLElement;
-  private readonly hasFlows: boolean;
+  private flowFiles: TFile[] = [];
 
   constructor(app: App, noteFolder: string, private resolve: (c: Choice | undefined) => void) {
     super(app);
     this.folder = noteFolder && noteFolder !== '/' ? noteFolder : '/';
-    this.hasFlows = this.flows().length > 0;
-    this.tab = this.hasFlows ? 'existing' : 'new';
+    this.tab = 'new';
   }
 
-  private flows() { return this.app.vault.getFiles().filter((f) => f.extension === 'flow'); }
   private pathOf(name: string) { return normalizePath(this.folder === '/' ? `${name}.flow` : `${this.folder}/${name}.flow`); }
   private finish(c: Choice) { this.done = true; this.resolve(c); this.close(); }
 
   onOpen() {
+    this.flowFiles = this.app.vault.getFiles().filter((f) => f.extension === 'flow');
+    this.tab = this.flowFiles.length ? 'existing' : 'new';
     this.titleEl.setText('Add FlowMotion diagram file');
-    if (this.hasFlows) {
+    if (this.flowFiles.length) {
       const bar = this.contentEl.createDiv({ cls: 'fm-tabs' });
       for (const [id, label] of [['existing', 'Use existing'], ['new', 'Create new']] as const) {
         const b = bar.createEl('button', { text: label, cls: 'fm-tab' });
@@ -86,7 +86,7 @@ class FileDialog extends Modal {
     const draw = () => {
       tree.empty();
       const root: Dir = { name: '', dirs: new Map(), files: [] };
-      const files = this.flows().filter((f) => !this.query || f.path.toLowerCase().includes(this.query)).sort((x, y) => x.path.localeCompare(y.path));
+      const files = this.flowFiles.filter((f) => !this.query || f.path.toLowerCase().includes(this.query)).sort((x, y) => x.path.localeCompare(y.path));
       for (const f of files) {
         let d = root;
         for (const part of f.path.split('/').slice(0, -1)) {
