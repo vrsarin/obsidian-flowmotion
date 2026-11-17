@@ -87,7 +87,7 @@ export class EditorPane {
   /** Plain text fallback: same value and preview, no syntax help. */
   private startPlain(addonMissing: boolean) {
     this.host.empty();
-    if (addonMissing) this.host.createDiv({ cls: 'fm-flow-note', text: 'The code editor add-on is not installed, so a plain text box is used. See FlowMotion settings.' });
+    if (addonMissing) this.host.createDiv({ cls: 'fm-flow-note', text: 'The code editor add-on is not installed, so a plain text box is used. Turn it off and on again in FlowMotion settings to download it.' });
     const ta = this.host.createEl('textarea', { cls: 'fm-flow-plain', attr: { spellcheck: 'false', 'aria-label': 'Diagram source' } });
     ta.value = this.text;
     ta.addEventListener('input', () => { this.text = ta.value; this.o.onChange(ta.value); this.schedulePreview(); });

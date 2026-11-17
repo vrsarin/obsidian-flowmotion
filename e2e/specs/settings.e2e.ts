@@ -1,10 +1,9 @@
 import { browser, expect } from '@wdio/globals';
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Settings page tests. Each test starts from a fresh copy of the vault (default settings).
 
-const ADDON_NOTICE = 'the draw.io editor add-on is not installed';
 
 let mainWindow: string;
 
@@ -113,9 +112,9 @@ async function noticeTexts(): Promise<string[]> {
   return texts;
 }
 
-async function waitForNotice(fragment: string): Promise<void> {
+async function waitForNotice(fragment: string, timeout = 5000): Promise<void> {
   await browser.waitUntil(async () => (await noticeTexts()).some((t) => t.includes(fragment)), {
-    timeout: 5000,
+    timeout,
     timeoutMsg: `no notice containing "${fragment}"`,
   });
 }
@@ -124,9 +123,6 @@ describe('FlowMotion settings page', () => {
   beforeEach(async () => {
     await browser.reloadObsidian({ vault: 'e2e/vaults/simple' });
     mainWindow = await browser.getWindowHandle();
-    const pluginDir = join(await vaultPath(), '.obsidian', 'plugins', 'flowmotion');
-    rmSync(join(pluginDir, 'drawio', 'index.html'), { force: true });
-    copyFileSync('dist/plugin/monaco.js', join(pluginDir, 'monaco.js'));
   });
 
   describe('layout', () => {
@@ -143,21 +139,26 @@ describe('FlowMotion settings page', () => {
       }
     });
 
-    it('shows the optional add-ons group with its heading and both toggles', async () => {
+    it('shows the optional add-ons group with its heading and the draw.io toggle', async () => {
       await openSettings();
       const heading = await browser.$('.vertical-tab-content .setting-item-heading .setting-item-name');
       await expect(heading).toHaveText('Optional add-ons');
       await setting('Add-on files');
       await setting('draw.io editor');
+    });
+
+    it('shows the built-in code editor toggle outside the add-ons group', async () => {
+      await openSettings();
       await setting('Code editor');
     });
 
-    it('shows the upstream-source setup instructions in the add-on files note', async () => {
+    it('explains that add-ons are downloaded when turned on and deleted when turned off', async () => {
       await openSettings();
       const item = await setting('Add-on files');
       const desc = await item.$('.setting-item-description').getText();
-      expect(desc).toContain('https://github.com/vrsarin/obsidian-flowmotion#optional-add-ons');
-      expect(desc).toContain('not included in FlowMotion releases');
+      expect(desc).toContain('not part of FlowMotion releases');
+      expect(desc).toContain('downloads it from its upstream project');
+      expect(desc).toContain('deletes the files');
     });
 
     it('has no toggle or dropdown on the playback-controls row', async () => {
@@ -267,56 +268,60 @@ describe('FlowMotion settings page', () => {
       });
     });
 
-    it('turning draw.io on without its files shows a notice and keeps it on', async () => {
+    it('turning draw.io on downloads it and turning it off deletes it', async () => {
+      const dir = join(await vaultPath(), '.obsidian', 'plugins', 'flowmotion', 'drawio');
       await openSettings();
       await setToggle('draw.io editor', true);
-      await waitForNotice(ADDON_NOTICE);
-      expect(await toggleIsOn('draw.io editor')).toBe(true);
+      await waitForNotice('the draw.io editor add-on is installed', 120000);
+      expect(existsSync(join(dir, 'index.html'))).toBe(true);
       expect((await pluginSettings()).drawioEnabled).toBe(true);
+      await browser.waitUntil(async () => (await (await setting('draw.io editor')).getText()).includes('Status: installed.'), { timeout: 5000, timeoutMsg: 'draw.io status did not say "installed"' });
+      await setToggle('draw.io editor', false);
+      await waitForNotice('the draw.io editor add-on was removed');
+      expect(existsSync(dir)).toBe(false);
+      expect((await pluginSettings()).drawioEnabled).toBe(false);
+      await browser.waitUntil(async () => (await (await setting('draw.io editor')).getText()).includes('Status: not installed.'), { timeout: 5000, timeoutMsg: 'draw.io status did not say "not installed"' });
     });
 
-    it('turning draw.io on with its files installed shows no notice and status installed', async () => {
+    it('turning draw.io on does not download again when its files are already installed', async () => {
       const base = await vaultPath();
       const dir = join(base, '.obsidian', 'plugins', 'flowmotion', 'drawio');
       mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, 'index.html'), '<!doctype html><title>draw.io</title>');
-      try {
-        await browser.reloadObsidian({ vault: base, copy: false });
-        mainWindow = await browser.getWindowHandle();
-        await openSettings();
-        await browser.waitUntil(async () => (await (await setting('draw.io editor')).getText()).includes('Status: installed.'), {
-          timeout: 5000,
-          timeoutMsg: 'draw.io status did not say "installed"',
-        });
-        await setToggle('draw.io editor', true);
-        await browser.pause(500);
-        expect((await noticeTexts()).some((t) => t.includes(ADDON_NOTICE))).toBe(false);
-        expect((await pluginSettings()).drawioEnabled).toBe(true);
-      } finally {
-        rmSync(join(dir, 'index.html'), { force: true });
-      }
+      writeFileSync(join(dir, 'index.html'), '<!doctype html><title>stub</title>');
+      await browser.reloadObsidian({ vault: base, copy: false });
+      mainWindow = await browser.getWindowHandle();
+      await openSettings();
+      await browser.waitUntil(async () => (await (await setting('draw.io editor')).getText()).includes('Status: installed.'), { timeout: 5000, timeoutMsg: 'draw.io status did not say "installed"' });
+      await setToggle('draw.io editor', true);
+      await waitForNotice('the draw.io editor add-on is installed');
+      expect(readFileSync(join(dir, 'index.html'), 'utf8')).toContain('stub');
+      await setToggle('draw.io editor', false);
+      await waitForNotice('the draw.io editor add-on was removed');
+      expect(existsSync(dir)).toBe(false);
     });
 
-    it('code editor shows its status from the built monaco.js file', async () => {
-      // The build puts monaco.js in the plugin folder, so the code editor reads as installed.
+    it('the code editor is built in: turning it on needs no download, and Monaco runs in Obsidian', async () => {
       await openSettings();
-      await browser.waitUntil(async () => (await (await setting('Code editor')).getText()).includes('Status: installed.'), {
-        timeout: 5000,
-        timeoutMsg: 'code editor status did not say "installed"',
-      });
-    });
-
-    it('turning the code editor on saves and raises no notice when installed', async () => {
-      await openSettings();
+      expect(await toggleIsOn('Code editor')).toBe(false);
       await setToggle('Code editor', true);
-      await browser.pause(500);
       expect((await pluginSettings()).codeEditor).toBe(true);
-      expect((await noticeTexts()).some((t) => t.includes('Code editor add-on is not installed'))).toBe(false);
-    });
+      expect(existsSync(join(await vaultPath(), '.obsidian', 'plugins', 'flowmotion', 'monaco'))).toBe(false);
 
-    it('turning the code editor off saves', async () => {
-      await openSettings();
-      await setToggle('Code editor', true);
+      const mounted = await inMainWindow(() => browser.executeObsidian(async ({ plugins }) => {
+        try {
+          const plugin = (plugins as unknown as Record<string, { loader: { acquire(): Promise<{ mount(h: HTMLElement, o: unknown): { dispose(): void } }>; release(): void } }>).flowmotion!;
+          const api = await plugin.loader.acquire();
+          const host = document.body.createDiv();
+          host.style.cssText = 'width:400px;height:200px';
+          const handle = api.mount(host, { value: 'nodes: []', dark: false, colors: { bg: '#ffffff', fg: '#000000', muted: '#888888', border: '#cccccc', accent: '#7700ff', font: 'monospace' }, onChange() {} });
+          await new Promise((r) => setTimeout(r, 500));
+          const ok = !!host.querySelector('.monaco-editor') && !!document.head.querySelector('style[data-flowmotion-monaco]');
+          handle.dispose(); host.remove(); plugin.loader.release();
+          return ok ? 'ok' : 'no editor element';
+        } catch (e) { return String(e); }
+      }));
+      expect(mounted).toBe('ok');
+
       await setToggle('Code editor', false);
       expect((await pluginSettings()).codeEditor).toBe(false);
     });

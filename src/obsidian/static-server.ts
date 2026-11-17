@@ -5,9 +5,9 @@ const TYPES: Record<string, string> = {
   svg: 'image/svg+xml', png: 'image/png', gif: 'image/gif', jpg: 'image/jpeg', jpeg: 'image/jpeg', ico: 'image/x-icon', xml: 'application/xml', woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf',
 };
 
-/** Serves the bundled draw.io folder on 127.0.0.1 (random port, GET only, never outside that folder).
+/** Serves an add-on folder on 127.0.0.1 (random port, GET only, never outside that folder).
  *  draw.io needs a normal http origin: it does not finish loading from Obsidian's app:// resources. Desktop only. */
-export class DrawioServer {
+export class StaticServer {
   private server?: Server;
   private starting?: Promise<string>;
   constructor(private root: () => string) {}
@@ -29,7 +29,9 @@ export class DrawioServer {
         if (file !== base && !file.startsWith(base + path.sep)) return fail(403);
         fs.readFile(file, (err, data) => {
           if (err) return fail(404);
-          res.writeHead(200, { 'content-type': TYPES[path.extname(file).slice(1).toLowerCase()] ?? 'application/octet-stream', 'cache-control': 'no-cache', 'x-content-type-options': 'nosniff' });
+          const ext = path.extname(file).slice(1).toLowerCase();
+          const headers = { 'content-type': TYPES[ext] ?? 'application/octet-stream', 'cache-control': 'no-cache', 'x-content-type-options': 'nosniff' };
+          res.writeHead(200, headers);
           res.end(req.method === 'HEAD' ? undefined : data);
         });
       });

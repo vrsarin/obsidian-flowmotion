@@ -1,4 +1,4 @@
-import { Editor, MarkdownRenderChild, Menu, Notice, Plugin, normalizePath, PluginSettingTab, Setting, type SettingDefinition, type SettingDefinitionItem, TFile, TFolder, type App, type MarkdownPostProcessorContext } from 'obsidian';
+import { Editor, MarkdownRenderChild, Menu, Notice, Platform, Plugin, normalizePath, PluginSettingTab, Setting, type SettingDefinition, type SettingDefinitionItem, TFile, TFolder, type App, type MarkdownPostProcessorContext } from 'obsidian';
 import { parseEmbed, relativePath, resolveVaultPath } from '../core/embed';
 import { DiagramError } from '../core/types';
 import { FLOW_TEMPLATE as STARTER } from '../core/template';
@@ -7,8 +7,9 @@ import { EditModal } from './edit-modal';
 import { FlowSuggest, flowLanguageExtension, blockAtCursor, formatBlockAt } from './language';
 import { chooseDiagramFile } from './file-dialog';
 import { MonacoLoader } from './monaco-loader';
-import { DrawioServer } from './drawio-server';
-import { ADDON_SETUP_URL, addonStatus, type AddonStatus } from './addons';
+import { StaticServer } from './static-server';
+import { ADDONS, addonStatus, type AddonId, type AddonStatus } from './addons';
+import { installAddon, removeAddon } from './addon-installer';
 import { BLANK_DRAWIO, isDrawioName } from './drawio-pane';
 import { FLOW_EXT, FLOW_TEMPLATE, FLOW_VIEW, FlowView } from './flowview';
 import { mountModel, type Mounted } from '../runtime/mount';
@@ -108,10 +109,13 @@ export default class FlowMotionPlugin extends Plugin {
   private cache = new Map<string, Model>();
   private children = new Set<DiagramChild>();
   private loader!: MonacoLoader;
-  private drawioServer = new DrawioServer(() => {
+  private drawioServer = new StaticServer(() => `${this.pluginRoot}/${ADDONS.drawio.dir}`);
+
+  /** Absolute folder that holds this plugin's files. Desktop only. */
+  get pluginRoot(): string {
     const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
-    return `${adapter.getBasePath?.() ?? ''}/${this.pluginDir}/drawio`;
-  });
+    return `${adapter.getBasePath?.() ?? ''}/${this.pluginDir}`;
+  }
 
   /** Vault-relative folder that holds this plugin's files (where the optional add-ons go). */
   get pluginDir(): string { return this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`; }
@@ -119,7 +123,7 @@ export default class FlowMotionPlugin extends Plugin {
   async onload() {
     const saved = (await this.loadData()) as Partial<Settings> | null;
     this.settings = { ...DEFAULTS, ...saved };
-    this.loader = new MonacoLoader(this.app, this.pluginDir);
+    this.loader = new MonacoLoader();
     this.registerMarkdownCodeBlockProcessor('flowmotion', (source, el, ctx) => {
       const host = el.createDiv({ cls: 'fm-host' });
       const child = new DiagramChild(host, source, ctx.sourcePath, el, ctx, this.app, this.settings, this.cache, this.children, (c) => void this.editDiagram(c));
@@ -205,6 +209,12 @@ export default class FlowMotionPlugin extends Plugin {
     this.insertBlock(editor, `src: ${/^[\w./-]+$/.test(rel) ? rel : JSON.stringify(rel)}`); // quote when YAML would misread it
   }
 
+  /** Stops using an add-on and deletes its files (the add-on was turned off). */
+  async releaseAddon(id: AddonId) {
+    this.drawioServer.stop();
+    await removeAddon(ADDONS[id], this.pluginRoot);
+  }
+
   async newDrawio(dir: string) {
     if (!this.settings.drawioEnabled) { new Notice('FlowMotion: turn on the draw.io editor in FlowMotion settings first.'); return; }
     const join = (n: string) => normalizePath(dir && dir !== '/' ? `${dir}/${n}` : n);
@@ -262,12 +272,12 @@ export class FlowMotionSettings extends PluginSettingTab {
         { name: 'draw.io background in light mode', desc: 'Sheet behind draw.io drawings. A diagram can override it from its own toolbar.', control: { type: 'dropdown', key: 'paperLight', options: PAPER_OPTIONS } },
         { name: 'draw.io background in dark mode', control: { type: 'dropdown', key: 'paperDark', options: PAPER_OPTIONS } },
         { name: 'Default speed', desc: 'Used when a diagram does not set animation.speed.', control: { type: 'dropdown', key: 'speed', options: { '0.5': '0.5×', '1': '1×', '2': '2×' } } },
+        { name: 'Code editor', desc: 'Syntax highlighting, completion and hover help for .flow files and the edit dialog (Monaco, built in). When off, a plain text box is used. Desktop app only.', control: { type: 'toggle', key: 'codeEditor' } },
         { name: 'Playback controls', desc: 'Off by default. Use the ⚙ button under a diagram to show them, or add "controls: true" to start with them visible.' },
       ] },
       { type: 'group', heading: 'Optional add-ons', items: [
-        { name: 'Add-on files', desc: `These add-ons are not included in FlowMotion releases. Build them from their upstream sources by following ${ADDON_SETUP_URL}.` },
+        { name: 'Add-on files', desc: 'The draw.io editor is not part of FlowMotion releases. Turning it on downloads it from its upstream project (from GitHub). Turning it off deletes the files. Desktop app only.' },
         this.addonDefinition({ name: 'draw.io editor', desc: 'Edit .drawio.flow files in draw.io. Desktop app only.', key: 'drawioEnabled', ready: 'drawio' }),
-        this.addonDefinition({ name: 'Code editor', desc: 'Syntax highlighting, completion and hover help for .flow files and the edit dialog (Monaco). When off, a plain text box is used.', key: 'codeEditor', ready: 'codeEditor' }),
       ] },
     ];
   }
@@ -312,20 +322,45 @@ export class FlowMotionSettings extends PluginSettingTab {
     }
   }
 
-  /** An add-on toggle. It shows whether the add-on files are installed, and warns when turned on without them. */
-  private addonDefinition(o: { name: string; desc: string; key: 'drawioEnabled' | 'codeEditor'; ready: keyof AddonStatus }): SettingDefinition {
+  /** An add-on toggle. Turning it on downloads the add-on; turning it off deletes it. */
+  private addonDefinition(o: { name: string; desc: string; key: 'drawioEnabled'; ready: keyof AddonStatus }): SettingDefinition {
+    const id: AddonId = o.ready;
     return {
       name: o.name,
       desc: o.desc,
       render: (setting) => {
+        const show = (text: string) => { setting.descEl.textContent = `${o.desc} ${text}`; }; // setDesc here would re-render declarative settings repeatedly
+        const refresh = () => addonStatus(this.app, this.plugin.pluginDir)
+          .then((st) => show(`Status: ${st[o.ready] ? 'installed' : 'not installed'}.`))
+          .catch((e) => { console.error('FlowMotion: could not check add-on files', e); show('Status: unknown.'); });
         setting.addToggle((t) => t.setValue(this.plugin.settings[o.key]).onChange(async (v) => {
-          await this.setControlValue(o.key, v);
-          if (v && !(await addonStatus(this.app, this.plugin.pluginDir))[o.ready]) new Notice(`FlowMotion: the ${o.name} add-on is not installed. Build it from its upstream source: ${ADDON_SETUP_URL}.`);
+          if (!Platform.isDesktopApp) { new Notice(`FlowMotion: the ${o.name} add-on works on the desktop app only.`); t.setValue(false); return; }
+          t.setDisabled(true);
+          try {
+            if (v) {
+              if (!(await addonStatus(this.app, this.plugin.pluginDir))[o.ready]) {
+                show('Downloading…');
+                new Notice(`FlowMotion: downloading the ${o.name} add-on…`);
+                await installAddon(ADDONS[id], this.plugin.pluginRoot);
+              }
+              await this.setControlValue(o.key, true);
+              new Notice(`FlowMotion: the ${o.name} add-on is installed.`);
+            } else {
+              await this.setControlValue(o.key, false);
+              await this.plugin.releaseAddon(id);
+              new Notice(`FlowMotion: the ${o.name} add-on was removed.`);
+            }
+          } catch (e) {
+            console.error(`FlowMotion: ${o.name} add-on`, e);
+            new Notice(`FlowMotion: could not ${v ? 'download' : 'remove'} the ${o.name} add-on: ${(e as Error).message}`);
+            await this.setControlValue(o.key, !v && (await addonStatus(this.app, this.plugin.pluginDir))[o.ready]);
+            t.setValue(this.plugin.settings[o.key]);
+          } finally {
+            t.setDisabled(false);
+            await refresh();
+          }
         }));
-        // Updating the row through setDesc here causes declarative settings to re-render repeatedly.
-        addonStatus(this.app, this.plugin.pluginDir)
-          .then((st) => { setting.descEl.textContent = `${o.desc} Status: ${st[o.ready] ? 'installed' : 'not installed'}.`; })
-          .catch((e) => { console.error('FlowMotion: could not check add-on files', e); setting.descEl.textContent = `${o.desc} Status: unknown.`; });
+        void refresh();
       },
     };
   }
