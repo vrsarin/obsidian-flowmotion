@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Runs the GitHub workflow steps locally in Docker Desktop, without publishing anything.
 #   1. lint.yml:    npm ci, build, lint, test on each Node version in NODE_VERSIONS
-#   2. release.yml: npm ci, fetch draw.io, build, package add-ons (Node 24), then collects the release files
+#   2. release.yml: npm ci and build the plugin (Node 24), then collects the release files
 # It works on a copy of the repo (.cache/pipeline), so the host's node_modules are never touched.
-# Output: dist/release/ (main.js, manifest.json, styles.css, flowmotion-addons.zip, SHA256SUMS).
+# Output: dist/release/ (main.js, manifest.json, styles.css, SHA256SUMS).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -22,12 +22,12 @@ for v in $NODE_VERSIONS; do
 done
 
 echo "== release.yml on Node 24"
-docker run --rm -v "$WORK:/app" -w /app node:24 bash -c 'apt-get update -qq && apt-get install -y -qq zip >/dev/null && npm ci && npm run fetch-drawio && npm run build && npm run addons'
+docker run --rm -v "$WORK:/app" -w /app node:24 bash -c 'npm ci && npm run build'
 
 echo "== Collecting release files"
 REL="$ROOT/dist/release"
 rm -rf "$REL" && mkdir -p "$REL"
-cp "$WORK/dist/plugin/main.js" "$WORK/manifest.json" "$WORK/styles.css" "$WORK/dist/addons/flowmotion-addons.zip" "$REL/"
-(cd "$REL" && shasum -a 256 main.js manifest.json styles.css flowmotion-addons.zip > SHA256SUMS)
+cp "$WORK/dist/plugin/main.js" "$WORK/manifest.json" "$WORK/styles.css" "$REL/"
+(cd "$REL" && shasum -a 256 main.js manifest.json styles.css > SHA256SUMS)
 ls -la "$REL"
 echo "== Pipeline finished"

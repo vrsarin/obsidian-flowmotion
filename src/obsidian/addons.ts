@@ -1,7 +1,7 @@
 import type { App } from 'obsidian';
 
-/** Where users download the optional add-on files (draw.io editor and code editor). FlowMotion never downloads code itself. */
-export const ADDON_URL = 'https://github.com/vrsarin/obsidian-flowmotion/releases';
+/** Setup instructions for building optional add-ons from their upstream sources. */
+export const ADDON_SETUP_URL = 'https://github.com/vrsarin/obsidian-flowmotion#optional-add-ons';
 
 export interface AddonStatus { drawio: boolean; codeEditor: boolean }
 

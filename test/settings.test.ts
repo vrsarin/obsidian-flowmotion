@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FileSystemAdapter } from 'obsidian';
 import { FlowMotionSettings } from '../src/obsidian/main';
 import { allSettings, notices } from './stubs/obsidian';
@@ -36,6 +36,22 @@ describe('settings page', () => {
     // Status checks finish asynchronously; the page must still be usable after they do.
     await new Promise((r) => setTimeout(r, 20));
     expect(tab.containerEl.textContent).toContain('Status:');
+  });
+
+  it('shows unknown status when checking add-on files fails', async () => {
+    const exists = vi.spyOn(FileSystemAdapter.prototype, 'exists').mockRejectedValue(new Error('check failed'));
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { tab } = makeTab({ ...DEFAULTS });
+      tab.display();
+      await vi.waitFor(() => {
+        expect(tab.containerEl.textContent?.match(/Status: unknown\./g)).toHaveLength(2);
+      });
+      expect(log).toHaveBeenCalled();
+    } finally {
+      exists.mockRestore();
+      log.mockRestore();
+    }
   });
 
   it('turning an add-on on without its files shows the download notice', async () => {

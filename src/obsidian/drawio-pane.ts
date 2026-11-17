@@ -1,6 +1,6 @@
 import type { App } from 'obsidian';
 import { extractMxfile } from '../drawio/parse';
-import { ADDON_URL } from './addons';
+import { ADDON_SETUP_URL } from './addons';
 
 export const DRAWIO_SUFFIX = '.drawio.flow';
 export const isDrawioName = (name: string | undefined) => !!name && name.toLowerCase().endsWith(DRAWIO_SUFFIX);
@@ -39,7 +39,7 @@ export class DrawioPane {
     const dir = this.o.pluginDir;
     const adapter = this.o.app.vault.adapter;
     if (!(await adapter.exists(`${dir}/drawio/index.html`))) {
-      this.root.createEl('p', { cls: 'fm-error', text: `The draw.io add-on is not installed. Download it from ${ADDON_URL}, copy its files into the FlowMotion plugin folder, then reopen this file.` });
+      this.root.createEl('p', { cls: 'fm-error', text: `The draw.io add-on is not installed. Build it from its upstream source by following ${ADDON_SETUP_URL}, then reopen this file.` });
       return;
     }
     if (this.dead) return;

@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Optional add-ons are built from upstream sources and are no longer included in FlowMotion release assets.
+
 ## [0.1.0]
 
 - First release.

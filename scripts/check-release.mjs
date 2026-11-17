@@ -4,8 +4,8 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-/** Files published with the release. The build writes the plugin to dist/plugin/. */
-export const RELEASE_FILES = ['dist/plugin/main.js', 'dist/plugin/manifest.json', 'dist/plugin/styles.css', 'dist/addons/flowmotion-addons.zip'];
+/** Files published with the release. Optional third-party add-ons are built separately from upstream sources. */
+export const RELEASE_FILES = ['dist/plugin/main.js', 'dist/plugin/manifest.json', 'dist/plugin/styles.css'];
 
 /** Returns a list of problems; an empty list means the release can be published. */
 export function checkRelease({ tag, manifest, versions, files }) {

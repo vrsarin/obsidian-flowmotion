@@ -8,7 +8,7 @@ import { FlowSuggest, flowLanguageExtension, blockAtCursor, formatBlockAt } from
 import { chooseDiagramFile } from './file-dialog';
 import { MonacoLoader } from './monaco-loader';
 import { DrawioServer } from './drawio-server';
-import { ADDON_URL, addonStatus, type AddonStatus } from './addons';
+import { ADDON_SETUP_URL, addonStatus, type AddonStatus } from './addons';
 import { BLANK_DRAWIO, isDrawioName } from './drawio-pane';
 import { FLOW_EXT, FLOW_TEMPLATE, FLOW_VIEW, FlowView } from './flowview';
 import { mountModel, type Mounted } from '../runtime/mount';
@@ -265,7 +265,7 @@ export class FlowMotionSettings extends PluginSettingTab {
         { name: 'Playback controls', desc: 'Off by default. Use the ⚙ button under a diagram to show them, or add "controls: true" to start with them visible.' },
       ] },
       { type: 'group', heading: 'Optional add-ons', items: [
-        { name: 'Add-on files', desc: `These add-ons are not part of the plugin. Download them from ${ADDON_URL}, unzip the file, and copy its contents into ${this.plugin.pluginDir}. Turn a feature on below after the files are in place.` },
+        { name: 'Add-on files', desc: `These add-ons are not included in FlowMotion releases. Build them from their upstream sources by following ${ADDON_SETUP_URL}.` },
         this.addonDefinition({ name: 'draw.io editor', desc: 'Edit .drawio.flow files in draw.io. Desktop app only.', key: 'drawioEnabled', ready: 'drawio' }),
         this.addonDefinition({ name: 'Code editor', desc: 'Syntax highlighting, completion and hover help for .flow files and the edit dialog (Monaco). When off, a plain text box is used.', key: 'codeEditor', ready: 'codeEditor' }),
       ] },
@@ -320,12 +320,12 @@ export class FlowMotionSettings extends PluginSettingTab {
       render: (setting) => {
         setting.addToggle((t) => t.setValue(this.plugin.settings[o.key]).onChange(async (v) => {
           await this.setControlValue(o.key, v);
-          if (v && !(await addonStatus(this.app, this.plugin.pluginDir))[o.ready]) new Notice(`FlowMotion: the ${o.name} add-on is not installed. Download it from ${ADDON_URL}.`);
+          if (v && !(await addonStatus(this.app, this.plugin.pluginDir))[o.ready]) new Notice(`FlowMotion: the ${o.name} add-on is not installed. Build it from its upstream source: ${ADDON_SETUP_URL}.`);
         }));
-        // A failed file check must not break the settings page: show the status as unknown instead.
+        // Updating the row through setDesc here causes declarative settings to re-render repeatedly.
         addonStatus(this.app, this.plugin.pluginDir)
-          .then((st) => setting.setDesc(`${o.desc} Status: ${st[o.ready] ? 'installed' : 'not installed'}.`))
-          .catch((e) => { console.error('FlowMotion: could not check add-on files', e); setting.setDesc(`${o.desc} Status: unknown.`); });
+          .then((st) => { setting.descEl.textContent = `${o.desc} Status: ${st[o.ready] ? 'installed' : 'not installed'}.`; })
+          .catch((e) => { console.error('FlowMotion: could not check add-on files', e); setting.descEl.textContent = `${o.desc} Status: unknown.`; });
       },
     };
   }
