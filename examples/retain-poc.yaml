@@ -1,0 +1,24 @@
+diagram:
+  id: retain-poc
+  direction: LR
+
+nodes:
+  - { id: extract, label: Extract Facts }
+  - { id: resolve, label: Resolve Entities }
+  - { id: store, label: Memory Bank }
+
+flows:
+  - { id: facts, from: extract, to: resolve, payload: Facts }
+  - { id: memories, from: resolve, to: store, payload: Linked Memories }
+
+events:
+  - { id: extract_facts, type: process, node: extract }
+  - { id: transfer_facts, type: transfer, flow: facts, after: [extract_facts] }
+  - { id: resolve_entities, type: process, node: resolve, after: [transfer_facts] }
+  - { id: transfer_memories, type: transfer, flow: memories, after: [resolve_entities] }
+  - { id: store_memories, type: process, node: store, after: [transfer_memories] }
+
+animation:
+  autoplay: true
+  loop: true
+  speed: 1

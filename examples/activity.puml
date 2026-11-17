@@ -1,0 +1,19 @@
+@startuml
+start
+:Receive order;
+if (In stock?) then (yes)
+  :Charge card;
+  fork
+    :Pack items;
+  fork again
+    :Send receipt;
+  end fork
+else (no)
+  :Notify customer;
+endif
+while (More items?) is (yes)
+  :Scan item;
+endwhile (no)
+:Ship;
+stop
+@enduml

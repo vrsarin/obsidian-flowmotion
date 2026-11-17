@@ -1,0 +1,57 @@
+flowchart TB
+  user((Users)) -->|HTTPS| r53[Route 53]
+  r53 --> cf[CloudFront]
+  cf -->|static| s3[(S3 assets)]
+  cf -->|/api| waf{WAF}
+
+  subgraph region [AWS Region us-east-1]
+    subgraph vpc [VPC 10.0.0.0/16]
+      subgraph pub [Public subnets]
+        alb{{ALB}}
+        nat[NAT Gateway]
+      end
+      subgraph priv [Private subnets]
+        subgraph ecs [ECS Fargate cluster]
+          auth[Auth service]
+          orders[Orders service]
+          pay[Payments service]
+        end
+        rds[(RDS Postgres)]
+        cache[[ElastiCache Redis]]
+      end
+    end
+    subgraph async [Async services]
+      sqs[[SQS orders-queue]]
+      invoice([Lambda: invoice])
+      sns>SNS order-events]
+      notify([Lambda: notifier])
+      ses[SES e-mail]
+      inv[(S3 invoices)]
+    end
+    ddb[(DynamoDB sessions)]
+    secrets[Secrets Manager]
+  end
+
+  stripe[Stripe API]:::ext
+
+  waf --> alb
+  alb -->|/auth| auth
+  alb -->|/orders| orders
+  auth --> ddb
+  auth -.-> secrets
+  orders --> cache
+  orders --> rds
+  orders -->|charge| pay
+  pay -->|via NAT| nat
+  nat --> stripe
+  orders -->|enqueue| sqs
+  sqs --> invoice
+  invoice --> inv
+  invoice --> sns
+  sns --> notify
+  notify --> ses
+
+  classDef ext fill:#eeeeee,stroke:#999999,color:#444444
+  style alb fill:#fff4e0,stroke:#e08a00
+  %% @duration orders 1200
+  %% @duration pay 1500

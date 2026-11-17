@@ -1,0 +1,18 @@
+flowchart TB
+  user((User)) -->|request| gw{Gateway}
+  subgraph platform [Platform]
+    gw -->|ok| api[API Service]
+    subgraph data [Data tier]
+      db[(Orders DB)]
+      cache[[Cache]]
+    end
+    api --> db
+    api -.->|miss| cache
+    cache ==> db
+  end
+  api --o audit>Audit log]
+  gw --x|denied| deny([Reject]):::bad
+  api <--> queue{{Queue}}
+  classDef bad fill:#fdeaea,stroke:#d13b3b,color:#7a1d1d
+  style api fill:#e6efff,stroke:#2f6fed,stroke-width:3px
+  linkStyle 2 stroke:#d13b3b,stroke-width:3px

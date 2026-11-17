@@ -1,0 +1,7 @@
+name: obsidian-flowmotion-codeql
+
+queries:
+  - uses: security-extended
+
+paths:
+  - .github/workflows

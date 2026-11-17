@@ -1,0 +1,447 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FlowMotion storyboard",
+  "type": "object",
+  "required": [
+    "elements",
+    "scenes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Storyboard title.",
+      "maxLength": 500
+    },
+    "speed": {
+      "type": "number",
+      "minimum": 300,
+      "maximum": 20000,
+      "default": 2200,
+      "description": "Default beat length in ms."
+    },
+    "elements": {
+      "type": "array",
+      "maxItems": 300,
+      "description": "Cards, groups and arrows. Exactly one top-level (ungrouped) card or group.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "type"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique element id.",
+            "pattern": "^[A-Za-z0-9_.>-]{1,64}$",
+            "x-ref": "element"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "rectangle",
+              "cylinder",
+              "group",
+              "arrow"
+            ]
+          },
+          "content": {
+            "type": "array",
+            "description": "Cards: a title and optional subtitle.",
+            "items": {
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "title",
+                    "subtitle"
+                  ]
+                },
+                "text": {
+                  "type": "string",
+                  "description": "Text.",
+                  "maxLength": 500
+                }
+              }
+            }
+          },
+          "width": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2000
+          },
+          "minCardHeight": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2000
+          },
+          "label": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "group: {title}; arrow: {text}.",
+            "properties": {
+              "title": {
+                "type": "string",
+                "description": "Group heading.",
+                "maxLength": 500
+              },
+              "text": {
+                "type": "string",
+                "description": "Arrow label.",
+                "maxLength": 500
+              }
+            }
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "Child element id.",
+              "pattern": "^[A-Za-z0-9_.>-]{1,64}$",
+              "x-ref": "element"
+            },
+            "description": "group: ids of cards or groups inside."
+          },
+          "layout": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "group layout.",
+            "properties": {
+              "direction": {
+                "type": "string",
+                "enum": [
+                  "row",
+                  "column"
+                ],
+                "default": "column"
+              },
+              "gap": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 400,
+                "default": 12
+              },
+              "align": {
+                "type": "string",
+                "enum": [
+                  "stretch",
+                  "center",
+                  "start"
+                ],
+                "default": "stretch"
+              }
+            }
+          },
+          "start": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Element the arrow starts at.",
+                "pattern": "^[A-Za-z0-9_.>-]{1,64}$",
+                "x-ref": "element"
+              }
+            }
+          },
+          "end": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Element the arrow ends at.",
+                "pattern": "^[A-Za-z0-9_.>-]{1,64}$",
+                "x-ref": "element"
+              }
+            }
+          },
+          "quiet": {
+            "type": "boolean",
+            "description": "arrow: draw faintly."
+          },
+          "route": {
+            "type": "string",
+            "description": "Accepted for compatibility; currently ignored."
+          }
+        }
+      }
+    },
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Chapters of the story; each has beats.",
+      "items": {
+        "type": "object",
+        "required": [
+          "beats"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Scene name.",
+            "maxLength": 500
+          },
+          "caption": {
+            "type": "string",
+            "description": "Accepted for compatibility; currently ignored.",
+            "maxLength": 500
+          },
+          "beats": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Steps shown one after another.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "say": {
+                  "type": "string",
+                  "description": "Caption for this beat.",
+                  "maxLength": 500
+                },
+                "ms": {
+                  "type": "number",
+                  "minimum": 200,
+                  "maximum": 60000,
+                  "description": "Beat length override in ms."
+                },
+                "edges": {
+                  "description": "Arrows to animate (ids, or {edge, data, back}).",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "edge"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "edge": {
+                          "type": "string",
+                          "description": "Arrow id.",
+                          "pattern": "^[A-Za-z0-9_.>-]{1,64}$",
+                          "x-ref": "element"
+                        },
+                        "data": {
+                          "type": "string",
+                          "description": "Packet label.",
+                          "maxLength": 500
+                        },
+                        "back": {
+                          "type": "boolean",
+                          "description": "Animate from end to start."
+                        }
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "edge"
+                            ],
+                            "additionalProperties": false,
+                            "properties": {
+                              "edge": {
+                                "type": "string",
+                                "description": "Arrow id.",
+                                "pattern": "^[A-Za-z0-9_.>-]{1,64}$",
+                                "x-ref": "element"
+                              },
+                              "data": {
+                                "type": "string",
+                                "description": "Packet label.",
+                                "maxLength": 500
+                              },
+                              "back": {
+                                "type": "boolean",
+                                "description": "Animate from end to start."
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                "show": {
+                  "type": "object",
+                  "description": "Map of card id → rows to reveal.",
+                  "additionalProperties": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "description": "A line inside a card (or a small graph with type: graph).",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "row",
+                            "graph"
+                          ]
+                        },
+                        "tone": {
+                          "type": "string",
+                          "enum": [
+                            "gray",
+                            "blue",
+                            "purple",
+                            "green",
+                            "orange"
+                          ],
+                          "default": "gray"
+                        },
+                        "tag": {
+                          "type": "string",
+                          "description": "Small label on the left.",
+                          "maxLength": 500
+                        },
+                        "text": {
+                          "type": "string",
+                          "description": "Main text.",
+                          "maxLength": 500
+                        },
+                        "meta": {
+                          "type": "string",
+                          "description": "Secondary text.",
+                          "maxLength": 500
+                        },
+                        "mark": {
+                          "type": "string",
+                          "description": "Marker on the right.",
+                          "maxLength": 500
+                        },
+                        "mono": {
+                          "type": "boolean",
+                          "description": "Use a monospace font."
+                        },
+                        "nodes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 12,
+                          "description": "graph: node names."
+                        },
+                        "links": {
+                          "type": "array",
+                          "items": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "minItems": 2,
+                            "maxItems": 2
+                          },
+                          "description": "graph: [from, to] pairs."
+                        },
+                        "lit": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "graph: highlighted nodes."
+                        }
+                      }
+                    }
+                  }
+                },
+                "light": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "description": "Element id.",
+                    "pattern": "^[A-Za-z0-9_.>-]{1,64}$",
+                    "x-ref": "element"
+                  },
+                  "description": "Elements to highlight."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "src": {
+      "type": "string",
+      "pattern": "\\.(flow|ya?ml|json)$",
+      "description": "Render a diagram stored in a .flow, .yaml or .json file (path relative to this note, or starting with / for the vault root). Only display options may be set next to it.",
+      "examples": [
+        "./diagram.yaml"
+      ]
+    },
+    "controls": {
+      "type": "boolean",
+      "description": "Show the playback control bar from the start."
+    },
+    "controlsPosition": {
+      "type": "string",
+      "enum": [
+        "top",
+        "bottom"
+      ],
+      "description": "Where the control bar sits.",
+      "default": "top"
+    },
+    "header": {
+      "type": "boolean",
+      "description": "Storyboards: show the step label above the diagram. Off by default, so the space goes to the diagram.",
+      "default": false
+    },
+    "footer": {
+      "type": "boolean",
+      "description": "Storyboards: show the caption text below the diagram. Off by default, so the space goes to the diagram.",
+      "default": false
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "fit",
+        "normal"
+      ],
+      "description": "\"fit\" scales the diagram to the available width."
+    },
+    "height": {
+      "type": "string",
+      "pattern": "^\\d{1,4}(\\.\\d+)?(px|vh)$",
+      "description": "Maximum height, e.g. 60vh or 500px.",
+      "examples": [
+        "60vh",
+        "500px"
+      ]
+    },
+    "width": {
+      "type": "string",
+      "pattern": "^\\d{1,4}(\\.\\d+)?(px|vw|%)$",
+      "description": "Maximum width, e.g. 70%, 900px or 80vw. The diagram is centered.",
+      "examples": [
+        "70%",
+        "900px"
+      ]
+    }
+  }
+}

@@ -1,0 +1,35 @@
+diagram:
+  id: retain
+  direction: LR
+
+nodes:
+  - { id: input, label: Conversation / Documents }
+  - { id: extract, label: Extract Facts }
+  - { id: resolve, label: Resolve Entities }
+  - { id: relate, label: Build Relationships }
+  - { id: bank, label: Memory Bank }
+  - { id: consolidate, label: Consolidation }
+  - { id: obs, label: Observations }
+
+flows:
+  - { id: f_input, from: input, to: extract, payload: Messages }
+  - { id: f_facts, from: extract, to: resolve, payload: Facts }
+  - { id: f_linked, from: resolve, to: relate, payload: Linked Facts }
+  - { id: f_memories, from: relate, to: bank, payload: Structured Memories }
+  - { id: f_bg, from: bank, to: consolidate, payload: Background batch }
+  - { id: f_obs, from: consolidate, to: obs, payload: Observations }
+
+events:
+  - { id: t_input, type: transfer, flow: f_input }
+  - { id: p_extract, type: process, node: extract, after: [t_input] }
+  - { id: t_facts, type: transfer, flow: f_facts, after: [p_extract] }
+  - { id: p_resolve, type: process, node: resolve, after: [t_facts] }
+  - { id: t_linked, type: transfer, flow: f_linked, after: [p_resolve] }
+  - { id: p_relate, type: process, node: relate, after: [t_linked] }
+  - { id: t_memories, type: transfer, flow: f_memories, after: [p_relate] }
+  - { id: p_bank, type: process, node: bank, duration: 700, after: [t_memories] }
+  # Background consolidation runs independently of the foreground pipeline.
+  - { id: t_bg, type: transfer, flow: f_bg, after: [p_bank] }
+  - { id: p_consolidate, type: process, node: consolidate, duration: 1800, after: [t_bg] }
+  - { id: t_obs, type: transfer, flow: f_obs, after: [p_consolidate] }
+  - { id: p_obs, type: process, node: obs, duration: 600, after: [t_obs] }

@@ -1,0 +1,9 @@
+@startgantt
+Project starts 2025-01-06
+[Research] lasts 7 days
+[Mockups] starts at [Research]'s end and lasts 5 days
+-- Build --
+[API] starts at [Mockups]'s end and lasts 14 days
+[UI] starts at [Mockups]'s end and lasts 10 days
+[Launch] happens at [API]'s end
+@endgantt
