@@ -1,0 +1,11 @@
+C4Context
+  title Banking system
+  Person(customer, "Customer", "A bank customer")
+  System_Boundary(b, "Bank") {
+    System(web, "Internet Banking", "Lets customers view accounts")
+    SystemDb(db, "Accounts DB", "Stores balances")
+  }
+  System_Ext(mail, "E-mail", "Sends notifications")
+  Rel(customer, web, "Uses", "HTTPS")
+  Rel(web, db, "Reads and writes")
+  Rel(web, mail, "Sends e-mail")

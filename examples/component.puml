@@ -1,0 +1,11 @@
+@startuml
+node "Web tier" {
+  [Frontend]
+  [API]
+}
+database "Orders DB" as db
+cloud Payments
+[Frontend] --> [API] : REST
+[API] --> db : SQL
+[API] ..> Payments : charge
+@enduml

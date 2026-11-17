@@ -1,0 +1,10 @@
+flowchart LR
+  input[Conversation / Documents] -->|Messages| extract[Extract Facts]
+  extract -->|Facts| resolve[Resolve Entities]
+  resolve -->|Linked Facts| relate[Build Relationships]
+  relate -->|Structured Memories| bank[Memory Bank]
+  bank -->|Background batch| consolidate[Consolidation]
+  consolidate -->|Observations| obs[Observations]
+
+  %% @duration bank 700
+  %% @duration consolidate 1800

@@ -1,0 +1,10 @@
+{
+  "id": "flowmotion",
+  "name": "FlowMotion",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "Animated, event-driven architecture diagrams from YAML in ```flowmotion code blocks. Fully offline.",
+  "author": "Vivek Sarin",
+  "isDesktopOnly": false,
+  "authorUrl": "https://github.com/vrsarin"
+}

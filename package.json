@@ -1,0 +1,56 @@
+{
+  "name": "flowmotion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Event-driven animated architecture diagrams from YAML (SVG-first, Obsidian plugin).",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-schema.mjs && node scripts/build.mjs && node scripts/build-monaco.mjs",
+    "schema": "node scripts/build-schema.mjs",
+    "examples": "tsx scripts/build-examples.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "fetch-drawio": "node scripts/fetch-drawio.mjs",
+    "install-plugin": "node scripts/install-plugin.mjs",
+    "addons": "node scripts/package-addons.mjs",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.13",
+    "elkjs": "^0.9.3",
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.15.7",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.15.0",
+    "eslint-plugin-obsidianmd": "^0.6.0",
+    "happy-dom": "^21.0.4",
+    "monaco-editor": "^0.52.2",
+    "obsidian": "latest",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.73.0",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
+  },
+  "overrides": {
+    "minimatch": "^11.0.9",
+    "eslint-plugin-n": "^18.5.0",
+    "@microsoft/eslint-plugin-sdl": {
+      "eslint": "$eslint"
+    },
+    "eslint-plugin-import": {
+      "eslint": "$eslint"
+    },
+    "eslint-plugin-react": {
+      "eslint": "$eslint"
+    }
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true
+  }
+}

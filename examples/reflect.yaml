@@ -1,0 +1,61 @@
+diagram:
+  id: reflect
+  direction: LR
+
+nodes:
+  - { id: question, label: Reasoning Question }
+  - { id: agent, label: Reflect Agent }
+  - { id: models, label: Models }
+  - { id: observations, label: Observations }
+  - { id: recall, label: Recall }
+  - { id: evaluate, label: Evaluate Evidence }
+  - { id: more, label: Retrieve More }
+  - { id: answer, label: Generate Answer }
+  - { id: output, label: Output }
+
+flows:
+  - { id: f_q, from: question, to: agent, payload: Question }
+  - { id: a_models, from: agent, to: models, payload: Lookup }
+  - { id: a_obs, from: agent, to: observations, payload: Lookup }
+  - { id: a_recall, from: agent, to: recall, payload: Lookup }
+  - { id: m_eval, from: models, to: evaluate, payload: Evidence }
+  - { id: o_eval, from: observations, to: evaluate, payload: Evidence }
+  - { id: r_eval, from: recall, to: evaluate, payload: Evidence }
+  - { id: e_more, from: evaluate, to: more, payload: "No: gaps" }
+  - { id: e_answer, from: evaluate, to: answer, payload: "Yes: sufficient" }
+  - { id: more_agent, from: more, to: agent, payload: Refined query, curve: true }
+  - { id: f_out, from: answer, to: output, payload: Answer }
+
+events:
+  - { id: t_q, type: transfer, flow: f_q }
+  - { id: think1, type: process, node: agent, after: [t_q] }
+  # Iteration 1: three concurrent lookups.
+  - { id: t_am, type: transfer, flow: a_models, after: [think1] }
+  - { id: t_ao, type: transfer, flow: a_obs, after: [think1] }
+  - { id: t_ar, type: transfer, flow: a_recall, after: [think1] }
+  - { id: p_m, type: process, node: models, duration: 700, after: [t_am] }
+  - { id: p_o, type: process, node: observations, duration: 900, after: [t_ao] }
+  - { id: p_r, type: process, node: recall, duration: 1500, after: [t_ar] }
+  - { id: t_me, type: transfer, flow: m_eval, after: [p_m] }
+  - { id: t_oe, type: transfer, flow: o_eval, after: [p_o] }
+  - { id: t_re, type: transfer, flow: r_eval, after: [p_r] }
+  - { id: j1, type: join, after: [t_me, t_oe, t_re] }
+  - { id: eval1, type: process, node: evaluate, after: [j1] }
+  # Decision 1: evidence insufficient -> feedback loop.
+  - { id: d1, type: branch, after: [eval1], select: [t_more] }
+  - { id: t_more, type: transfer, flow: e_more, after: [d1] }
+  - { id: t_ans_unused, type: transfer, flow: e_answer, after: [d1] }
+  - { id: p_more, type: process, node: more, after: [t_more] }
+  - { id: t_back, type: transfer, flow: more_agent, after: [p_more] }
+  # Iteration 2: agent retries with a refined recall.
+  - { id: think2, type: process, node: agent, after: [t_back] }
+  - { id: t_ar2, type: transfer, flow: a_recall, after: [think2] }
+  - { id: p_r2, type: process, node: recall, duration: 1100, after: [t_ar2] }
+  - { id: t_re2, type: transfer, flow: r_eval, after: [p_r2] }
+  - { id: eval2, type: process, node: evaluate, after: [t_re2] }
+  # Decision 2: sufficient -> answer.
+  - { id: d2, type: branch, after: [eval2], select: [t_ans] }
+  - { id: t_ans, type: transfer, flow: e_answer, after: [d2] }
+  - { id: p_ans, type: process, node: answer, after: [t_ans] }
+  - { id: t_out, type: transfer, flow: f_out, after: [p_ans] }
+  - { id: p_out, type: process, node: output, duration: 500, after: [t_out] }

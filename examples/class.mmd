@@ -1,0 +1,12 @@
+classDiagram
+  class Animal {
+    +String name
+    +int age
+    +eat() void
+  }
+  class Dog {
+    +bark() void
+  }
+  Animal <|-- Dog
+  Animal "1" *-- "many" Leg : has
+  Dog ..> Bone : chews

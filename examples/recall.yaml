@@ -1,0 +1,49 @@
+diagram:
+  id: recall
+  direction: LR
+
+nodes:
+  - { id: query, label: Query }
+  - { id: semantic, label: Semantic Search }
+  - { id: keyword, label: Keyword BM25 }
+  - { id: graph, label: Graph Search }
+  - { id: temporal, label: Temporal Search }
+  - { id: fusion, label: Rank Fusion }
+  - { id: rerank, label: Reranking }
+  - { id: context, label: Relevant Context }
+
+flows:
+  - { id: q_sem, from: query, to: semantic, payload: Query }
+  - { id: q_key, from: query, to: keyword, payload: Query }
+  - { id: q_gra, from: query, to: graph, payload: Query }
+  - { id: q_tem, from: query, to: temporal, payload: Query }
+  - { id: c_sem, from: semantic, to: fusion, payload: Candidates }
+  - { id: c_key, from: keyword, to: fusion, payload: Candidates }
+  - { id: c_gra, from: graph, to: fusion, payload: Candidates }
+  - { id: c_tem, from: temporal, to: fusion, payload: Candidates }
+  - { id: ranked, from: fusion, to: rerank, payload: Ranked }
+  - { id: result, from: rerank, to: context, payload: Context }
+
+events:
+  - { id: p_query, type: process, node: query, duration: 500 }
+  # Fan-out: four concurrent retrieval paths with different latencies.
+  - { id: t_sem, type: transfer, flow: q_sem, after: [p_query] }
+  - { id: t_key, type: transfer, flow: q_key, after: [p_query] }
+  - { id: t_gra, type: transfer, flow: q_gra, after: [p_query] }
+  - { id: t_tem, type: transfer, flow: q_tem, after: [p_query] }
+  - { id: p_sem, type: process, node: semantic, duration: 1400, after: [t_sem] }
+  - { id: p_key, type: process, node: keyword, duration: 700, after: [t_key] }
+  - { id: p_gra, type: process, node: graph, duration: 1900, after: [t_gra] }
+  - { id: p_tem, type: process, node: temporal, duration: 1000, after: [t_tem] }
+  - { id: s_sem, type: transfer, flow: c_sem, duration: 1200, after: [p_sem] }
+  - { id: s_key, type: transfer, flow: c_key, duration: 1200, after: [p_key] }
+  - { id: s_gra, type: transfer, flow: c_gra, duration: 1200, after: [p_gra] }
+  - { id: s_tem, type: transfer, flow: c_tem, duration: 1200, after: [p_tem] }
+  # Fan-in: fusion shows "waiting" until the slowest path arrives.
+  - { id: w_fusion, type: wait, node: fusion, after: [p_query], until: [s_sem, s_key, s_gra, s_tem] }
+  - { id: j_fusion, type: join, after: [s_sem, s_key, s_gra, s_tem, w_fusion] }
+  - { id: p_fusion, type: process, node: fusion, after: [j_fusion] }
+  - { id: t_ranked, type: transfer, flow: ranked, after: [p_fusion] }
+  - { id: p_rerank, type: process, node: rerank, after: [t_ranked] }
+  - { id: t_result, type: transfer, flow: result, after: [p_rerank] }
+  - { id: p_context, type: process, node: context, duration: 600, after: [t_result] }
