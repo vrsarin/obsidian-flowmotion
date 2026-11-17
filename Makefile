@@ -20,6 +20,7 @@ help:
 	@echo "Build and check"
 	@echo "  make build              Build main.js, styles.css and the Monaco add-on"
 	@echo "  make test               Run the unit tests"
+	@echo "  make test-e2e           Run the end-to-end tests"
 	@echo "  make lint               Run ESLint with the Obsidian rules"
 	@echo "  make release-build      Fetch draw.io, build, and package the add-ons into dist/"
 	@echo "  make release-check      Check the version and files are ready to publish (TAG=0.1.0)"
@@ -46,6 +47,9 @@ build:
 
 test:
 	$(NPM) test
+
+test-e2e:
+	$(NPM) run test:e2e
 
 lint:
 	$(NPM) run lint
