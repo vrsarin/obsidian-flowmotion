@@ -18,7 +18,7 @@
   "dependencies": {
     "@codemirror/state": "6.7.6",
     "@codemirror/view": "6.43.13",
-    "elkjs": "^0.9.3",
+    "elkjs": "^0.12.1",
     "yaml": "^2.5.0"
   },
   "devDependencies": {
