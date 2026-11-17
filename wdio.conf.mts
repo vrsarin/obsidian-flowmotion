@@ -8,7 +8,8 @@ const cacheDir = path.resolve('.obsidian-cache');
 // minAppVersion (1.4.0). "earliest" would pick 1.4.0, which is a beta build that
 // needs Insiders credentials, so it cannot run in CI. The installer is "latest":
 // the 1.1.9 installer does not start on macOS arm64.
-const versions: [string, string][] = [  
+const versions: [string, string][] = [
+  ['1.4.5', 'latest'],
   ['1.15.1', 'latest'],
   ['latest', 'latest'],
 ];

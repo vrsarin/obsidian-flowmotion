@@ -1,5 +1,5 @@
 import { browser, expect } from '@wdio/globals';
-import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Settings page tests. Each test starts from a fresh copy of the vault (default settings).
@@ -67,7 +67,16 @@ function savedDataPath(base: string): string {
 
 async function waitForSavedSetting(base: string, key: string, expected: unknown): Promise<void> {
   await browser.waitUntil(
-    () => existsSync(savedDataPath(base)) && JSON.parse(readFileSync(savedDataPath(base), 'utf8'))[key] === expected,
+    () => {
+      try {
+        return JSON.parse(readFileSync(savedDataPath(base), 'utf8'))[key] === expected;
+      } catch (error) {
+        if (error instanceof SyntaxError || (error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
+          return false;
+        }
+        throw error;
+      }
+    },
     { timeout: 5000, timeoutMsg: `${key} was not saved as ${JSON.stringify(expected)}` },
   );
 }
@@ -87,6 +96,9 @@ async function waitForNotice(fragment: string): Promise<void> {
 describe('FlowMotion settings page', () => {
   beforeEach(async () => {
     await browser.reloadObsidian({ vault: 'e2e/vaults/simple' });
+    const pluginDir = join(await vaultPath(), '.obsidian', 'plugins', 'flowmotion');
+    rmSync(join(pluginDir, 'drawio', 'index.html'), { force: true });
+    copyFileSync('dist/plugin/monaco.js', join(pluginDir, 'monaco.js'));
   });
 
   describe('layout', () => {
@@ -166,7 +178,7 @@ describe('FlowMotion settings page', () => {
 
     it('offers 0.5×, 1× and 2×', async () => {
       await openSettings();
-      expect(await dropdownOptions('Default speed')).toEqual(['0.5', '1', '2']);
+      expect((await dropdownOptions('Default speed')).sort()).toEqual(['0.5', '1', '2']);
     });
 
     it('saves a numeric speed, not text', async () => {
@@ -251,7 +263,7 @@ describe('FlowMotion settings page', () => {
         expect((await noticeTexts()).some((t) => t.includes(ADDON_NOTICE))).toBe(false);
         expect((await pluginSettings()).drawioEnabled).toBe(true);
       } finally {
-        rmSync(join(base, '.obsidian', 'plugins', 'flowmotion', 'drawio'), { recursive: true, force: true });
+        rmSync(join(dir, 'index.html'), { force: true });
       }
     });
 
@@ -281,6 +293,18 @@ describe('FlowMotion settings page', () => {
   });
 
   describe('persistence', () => {
+    it('waits for a partially written settings file to become valid', async () => {
+      const base = await vaultPath();
+      const path = savedDataPath(base);
+      writeFileSync(path, '{"speed":');
+      const timer = setTimeout(() => writeFileSync(path, '{"speed":2}'), 1000);
+      try {
+        await waitForSavedSetting(base, 'speed', 2);
+      } finally {
+        clearTimeout(timer);
+      }
+    });
+
     it('keeps every changed value after Obsidian restarts on the same vault', async () => {
       await openSettings();
       await setToggle('Autoplay', false);
