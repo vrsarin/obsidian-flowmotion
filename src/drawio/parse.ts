@@ -57,11 +57,33 @@ export const isDrawioSource = (text: string) => extractMxfile(text.slice(0, 4_00
 
 async function inflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
   const ds = new DecompressionStream('deflate-raw');
-  const w = ds.writable.getWriter();
-  void w.write(bytes as unknown as BufferSource).catch(() => undefined); void w.close().catch(() => undefined);
-  const buf = await new Response(ds.readable).arrayBuffer();
-  if (buf.byteLength > 20_000_000) throw new DiagramError(['draw.io diagram is too large once decompressed.']);
-  return new Uint8Array(buf);
+  const writer = ds.writable.getWriter();
+  const reader = ds.readable.getReader();
+  const writing = writer.write(bytes as unknown as BufferSource).then(() => writer.close());
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 20_000_000) {
+        await reader.cancel();
+        await writing.catch(() => undefined);
+        throw new DiagramError(['draw.io diagram is too large once decompressed.']);
+      }
+      chunks.push(value);
+    }
+    await writing;
+  } catch (e) {
+    await reader.cancel().catch(() => undefined);
+    await writing.catch(() => undefined);
+    throw e;
+  }
+  const out = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.byteLength; }
+  return out;
 }
 
 /** The `<mxGraphModel>` element of the first page, decompressing it when draw.io stored it compressed. */

@@ -21,7 +21,7 @@ export function buildStoryTimeline(sb: Storyboard, tail = 1200): Timeline {
       });
       for (const l of b.light) items.push({ id: `b${n}.l.${l}`, type: 'light', node: l, start: t, end: t + dur, skipped: false });
       for (const [node, rows] of Object.entries(b.show)) {
-        const s: Item = { id: `b${n}.s.${node}`, type: 'show', node, start: t + (travel || 250), end: 0, skipped: false, rows };
+        const s: Item = { id: `b${n}.s.${node}`, type: 'show', node, start: t + (travel || Math.min(250, dur)), end: 0, skipped: false, rows };
         shows.push(s); items.push(s); marks.add(s.start);
       }
       marks.add(t); marks.add(t + travel); t += dur; n++;

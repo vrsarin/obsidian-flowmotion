@@ -425,6 +425,10 @@
       ],
       "description": "\"fit\" scales the diagram to the available width."
     },
+    "paper": {
+      "type": "string",
+      "description": "draw.io drawings: sheet behind the drawing, or a colour."
+    },
     "height": {
       "type": "string",
       "pattern": "^\\d{1,4}(\\.\\d+)?(px|vh)$",

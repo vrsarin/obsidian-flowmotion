@@ -60,7 +60,10 @@ export class EditorPane {
       this.acquired = true;
       try {
         const api = await loader.acquire();
-        if (this.dead) { loader.release(); this.acquired = false; return; }
+        if (this.dead) {
+          if (this.acquired) { loader.release(); this.acquired = false; }
+          return;
+        }
         this.host.empty();
         const css = getComputedStyle(activeDocument.body);
         const v = (n: string, d: string) => css.getPropertyValue(n).trim() || d;

@@ -6,6 +6,7 @@ import { frameAt, type Frame } from './frame';
 import type { Model } from './model';
 import { layoutRows, wrap } from './rows';
 import { themes, type Theme, type ThemeName } from './theme';
+import { namespaceSanitizedSvg } from '../drawio/sanitize';
 
 export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -231,22 +232,37 @@ export function renderSvg(m: Model, opts: RenderOptions): string {
   out.push(`<defs>${markerDefs(p, layout.edges, th)}</defs>`);
   if (bd) {
     out.push(`<style>.${p}.fm-overlay{background:transparent}` +
-      `.${p} .fm-overlay-edge{fill:none;stroke:${th.packetFill};stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;opacity:0;transition:opacity .15s}` +
-      `.${p} .fm-overlay-edge[data-active="true"]{opacity:.9}` +
+      `.${p} .fm-overlay-edge{fill:none;stroke:${th.packetFill};stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;${opts.smil ? '' : 'opacity:0;transition:opacity .15s'}}` +
+      `${opts.smil ? '' : `.${p} .fm-overlay-edge[data-active="true"]{opacity:.9}`}` +
       `.${p} .fm-obox{fill:none;stroke:none;pointer-events:all}` +
-      `.${p} [data-state="receiving"] .fm-obox,.${p} [data-state="processing"] .fm-obox{stroke:${th.states.processing.stroke};stroke-width:2;fill:${th.states.processing.stroke};fill-opacity:.07}` +
-      `.${p} [data-state="completed"] .fm-obox{stroke:${th.states.completed.stroke};stroke-width:2;fill:${th.states.completed.stroke};fill-opacity:.07}` +
-      `.${p} [data-state="error"] .fm-obox{stroke:${th.states.error.stroke};stroke-width:2;fill:${th.states.error.stroke};fill-opacity:.1}` +
-      `.${p} [data-state="waiting"] .fm-obox{stroke:${th.states.waiting.stroke};stroke-width:2;stroke-dasharray:5 4}</style>`);
+      `${opts.smil ? '' :
+        `.${p} [data-state="receiving"] .fm-obox,.${p} [data-state="processing"] .fm-obox{stroke:${th.states.processing.stroke};stroke-width:2;fill:${th.states.processing.stroke};fill-opacity:.07}` +
+        `.${p} [data-state="completed"] .fm-obox{stroke:${th.states.completed.stroke};stroke-width:2;fill:${th.states.completed.stroke};fill-opacity:.07}` +
+        `.${p} [data-state="error"] .fm-obox{stroke:${th.states.error.stroke};stroke-width:2;fill:${th.states.error.stroke};fill-opacity:.1}` +
+        `.${p} [data-state="waiting"] .fm-obox{stroke:${th.states.waiting.stroke};stroke-width:2;stroke-dasharray:5 4}`}</style>`);
     // CSS: override the sheet colour with `--fm-paper`, e.g. `.fm-wrap { --fm-paper: #fafafa }` in a snippet.
     if (paper !== 'none') out.push(`<rect class="fm-paper" x="${r2(bd.ox)}" y="${r2(bd.oy)}" width="${r2(bd.w)}" height="${r2(bd.h)}" style="fill:var(--fm-paper,${paper === 'dark' ? '#1e1e1e' : paper === 'light' ? '#ffffff' : esc(paper)})" rx="6"/>`);
-    out.push(`<g class="fm-backdrop" transform="translate(${r2(bd.ox)} ${r2(bd.oy)})">${bd.inner}</g>`);
+    const backdropPrefix = `${p}-bd`;
+    const backdrop = namespaceSanitizedSvg(bd.inner, 'fmbd', backdropPrefix);
+    const backdropId = bd.rootId?.replace(/^fmbd-/, `${backdropPrefix}-`);
+    out.push(`<g${backdropId ? ` id="${esc(backdropId)}"` : ''} class="fm-backdrop" transform="translate(${r2(bd.ox)} ${r2(bd.oy)})">${backdrop}</g>`);
     out.push('<g class="fm-edges">');
-    for (const e of layout.edges) out.push(`<path class="fm-overlay-edge" data-edge="${esc(e.id)}" data-active="${frame.edges[e.id] ? 'true' : 'false'}" d="${e.path.d}"/>`);
+    const edgeTimes = (id: string) => [...new Set([0, ...tl.items.filter((i) => !i.skipped && i.type === 'transfer' && i.flow === id && i.until !== undefined).flatMap((i) => [i.start, i.until!])])]
+      .filter((t) => t < tl.total).sort((a, b) => a - b);
+    const nodeTimes = (id: string) => [...new Set([0, ...tl.items.filter((i) => !i.skipped && (i.node === id || i.to === id)).flatMap((i) => [i.start, i.end])])]
+      .filter((t) => t < tl.total).sort((a, b) => a - b);
+    for (const e of layout.edges) {
+      const active = opts.smil ? discrete('opacity', tl.total, edgeTimes(e.id).map((t) => [t, frameAt(m, t).edges[e.id] ? '.9' : '0'])) : '';
+      out.push(`<path class="fm-overlay-edge" data-edge="${esc(e.id)}" data-active="${frame.edges[e.id] ? 'true' : 'false'}"${opts.smil ? ` opacity="${frame.edges[e.id] ? '.9' : '0'}"` : ''} d="${e.path.d}">${active}</path>`);
+    }
     out.push('</g><g class="fm-nodes">');
     for (const n of layout.nodes) {
-      const body = `<g class="fm-node" data-node="${esc(n.id)}" data-state="${frame.nodes[n.id] ?? 'idle'}"><title>${esc(n.label)}</title><rect class="fm-obox" x="${r2(n.x)}" y="${r2(n.y)}" width="${r2(n.w)}" height="${r2(n.h)}" rx="8"/></g>`;
-      out.push(n.href && SAFE_HREF.test(n.href) ? `<a href="${esc(n.href)}" target="_blank" rel="noopener noreferrer" class="fm-link">${body}</a>` : body);
+      const state = frame.nodes[n.id] ?? 'idle';
+      const opacity = opts.smil ? discrete('opacity', tl.total, nodeTimes(n.id).map((t) => [t, frameAt(m, t).nodes[n.id] === 'idle' ? '0' : '1'])) : '';
+      const rect = `<rect class="fm-obox" x="${r2(n.x)}" y="${r2(n.y)}" width="${r2(n.w)}" height="${r2(n.h)}" rx="8"${opts.smil ? ` style="fill:${th.states.processing.stroke};stroke:${th.states.processing.stroke};stroke-width:2" opacity="${state === 'idle' ? '0' : '1'}"` : ''}>${opacity}</rect>`;
+      const body = `<g class="fm-node" data-node="${esc(n.id)}" data-state="${state}"><title>${esc(n.label)}</title>${rect}</g>`;
+      out.push(body);
+      if (n.href && SAFE_HREF.test(n.href)) out[out.length - 1] = `<a href="${esc(n.href)}" target="_blank" rel="noopener noreferrer" class="fm-link">${out[out.length - 1]}</a>`;
     }
     out.push('</g><g class="fm-packets">');
     for (const i of live) {
@@ -257,7 +273,11 @@ export function renderSvg(m: Model, opts: RenderOptions): string {
       const pb = label
         ? `<rect class="fm-pkt-box" x="${r2(-w / 2)}" y="${-PACKET_H / 2}" width="${w}" height="${PACKET_H}" rx="${PACKET_H / 2}"/><text class="fm-pkt-text" text-anchor="middle" dominant-baseline="central">${esc(label)}</text>`
         : `<circle class="fm-dot" r="6"/>`;
-      out.push(`<g class="fm-packet" data-packet="${esc(i.id)}" opacity="${pos ? 1 : 0}"${pos ? ` transform="translate(${r2(pos.x)} ${r2(pos.y)})"` : ''}>${pb}</g>`);
+      const kp = i.back ? '1;1;0;0' : '0;0;1;1';
+      const motion = opts.smil
+        ? `<animateMotion path="${edge.path.d}" dur="${tl.total}ms" repeatCount="indefinite" calcMode="linear" keyPoints="${kp}" keyTimes="0;${r2(i.start / tl.total)};${r2(i.end / tl.total)};1"/>` + showHide(tl.total, i.start, i.end)
+        : '';
+      out.push(`<g class="fm-packet" data-packet="${esc(i.id)}" opacity="${pos ? 1 : 0}"${pos ? ` transform="translate(${r2(pos.x)} ${r2(pos.y)})"` : ''}>${pb}${motion}</g>`);
     }
     out.push('</g></svg>');
     return out.join('');
