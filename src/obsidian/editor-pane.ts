@@ -112,7 +112,7 @@ export class EditorPane {
       const ul = box.createEl('ul');
       for (const p of problems.slice(0, 12)) ul.createEl('li', { text: p });
     } else if (!model) this.preview.createDiv({ cls: 'fm-flow-empty', text: 'Start typing a diagram, or press Ctrl+Space for suggestions.' });
-    else this.mounted = mountModel(this.preview, model, { theme: 'obsidian', controls: true, height: undefined, autoplay: this.o.autoplay && model.animation.autoplay, speed: model.animation.speed !== 1 ? model.animation.speed : this.o.speed });
+    else this.mounted = mountModel(this.preview, model, { createEl, theme: 'obsidian', controls: true, height: undefined, autoplay: this.o.autoplay && model.animation.autoplay, speed: model.animation.speed !== 1 ? model.animation.speed : this.o.speed });
   }
 
   /** Free the editor, its models and the Monaco bundle (when no other pane uses it). */

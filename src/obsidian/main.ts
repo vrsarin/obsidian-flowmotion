@@ -82,6 +82,7 @@ class DiagramChild extends MarkdownRenderChild {
       if (model.backdrop) merged.paper = explicit ?? (activeDocument.body.classList.contains('theme-dark') ? this.settings.paperDark : this.settings.paperLight);
       const a = model.animation;
       this.mounted = mountModel(this.containerEl, { ...model, view: merged }, { // block options (controlsPosition, mode, width, ...) override the file's
+        createEl,
         theme: 'obsidian',
         paperChoice: explicit,
         onPaper: (v) => void this.setPaper(v),
