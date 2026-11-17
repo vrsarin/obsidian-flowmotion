@@ -109,13 +109,7 @@ export default class FlowMotionPlugin extends Plugin {
   private cache = new Map<string, Model>();
   private children = new Set<DiagramChild>();
   private loader!: MonacoLoader;
-  private drawioServer = new StaticServer(() => `${this.pluginRoot}/${ADDONS.drawio.dir}`);
-
-  /** Absolute folder that holds this plugin's files. Desktop only. */
-  get pluginRoot(): string {
-    const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
-    return `${adapter.getBasePath?.() ?? ''}/${this.pluginDir}`;
-  }
+  private drawioServer = new StaticServer(this.app.vault.adapter, () => `${this.pluginDir}/${ADDONS.drawio.dir}`);
 
   /** Vault-relative folder that holds this plugin's files (where the optional add-ons go). */
   get pluginDir(): string { return this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`; }
@@ -220,7 +214,7 @@ export default class FlowMotionPlugin extends Plugin {
       retiredViews = views;
     }
     this.drawioServer.stop();
-    try { await removeAddon(ADDONS[id], this.pluginRoot); }
+    try { await removeAddon(ADDONS[id], this.app.vault.adapter, this.pluginDir); }
     catch (e) {
       if (id === 'drawio' && await this.app.vault.adapter.exists(`${this.pluginDir}/${ADDONS.drawio.dir}/${ADDONS.drawio.marker}`)) {
         for (const view of retiredViews) view.restoreDrawioPane();
@@ -355,7 +349,7 @@ export class FlowMotionSettings extends PluginSettingTab {
               if (!(await addonStatus(this.app, this.plugin.pluginDir))[o.ready]) {
                 show('Downloading…');
                 new Notice(`FlowMotion: downloading the ${o.name} add-on…`);
-                await installAddon(ADDONS[id], this.plugin.pluginRoot);
+                await installAddon(ADDONS[id], this.app.vault.adapter, this.plugin.pluginDir);
               }
               await this.setControlValue(o.key, true);
               new Notice(`FlowMotion: the ${o.name} add-on is installed.`);

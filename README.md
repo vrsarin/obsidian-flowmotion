@@ -92,6 +92,12 @@ To use it, open FlowMotion settings and turn it on. FlowMotion downloads it into
 
 The **Code editor** setting (Monaco, with syntax help for diagram code) needs no download: Monaco is built into `main.js`. On mobile, or when the setting is off, FlowMotion uses a plain text box. draw.io and Monaco are licensed under Apache-2.0 and MIT; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
+## Data access
+
+- The diagram picker lists vault folders and `.flow` files. Path completion searches vault file names for `.flow`, YAML, and JSON files.
+- The optional Monaco code editor includes clipboard support for editing and clipboard-aware suggestions. FlowMotion does not call the clipboard API directly.
+- The optional draw.io editor is downloaded into the plugin folder through the vault adapter. A local server bound to `127.0.0.1` serves those files to the editor.
+
 ## Advanced
 
 See the wiki for [reusing diagram files](https://github.com/vrsarin/obsidian-flowmotion/wiki/Reusing-Diagrams), [backgrounds](https://github.com/vrsarin/obsidian-flowmotion/wiki/Appearance-and-Backgrounds), [editor support](https://github.com/vrsarin/obsidian-flowmotion/wiki/Developer-Schema-and-Validation), and [build commands](https://github.com/vrsarin/obsidian-flowmotion/wiki/Developer-Setup). The full YAML format is in [Advanced: YAML format](https://github.com/vrsarin/obsidian-flowmotion/wiki/Advanced-YAML-Format).
