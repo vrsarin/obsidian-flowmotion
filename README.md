@@ -81,7 +81,7 @@ To edit a diagram with help (autocomplete, error checks, and a live preview), ho
 | C4 and architecture | Software and cloud landscapes |
 | Class and ER | Data models |
 
-Full syntax: [docs/diagram-syntax.md](docs/diagram-syntax.md)
+Full syntax: [Writing diagrams](https://github.com/vrsarin/obsidian-flowmotion/wiki/Writing-Diagrams).
 
 ## Optional add-ons
 
@@ -100,11 +100,11 @@ Without the files, the settings show a link to the download and FlowMotion uses 
 
 ## Advanced
 
-Reusing diagram files, draw.io backgrounds, the VS Code editor setup, and build commands are in [docs/advanced-configuration.md](docs/advanced-configuration.md). The full YAML format is in [docs/yaml-reference.md](docs/yaml-reference.md).
+See the wiki for [reusing diagram files](https://github.com/vrsarin/obsidian-flowmotion/wiki/Reusing-Diagrams), [backgrounds](https://github.com/vrsarin/obsidian-flowmotion/wiki/Appearance-and-Backgrounds), [editor support](https://github.com/vrsarin/obsidian-flowmotion/wiki/Developer-Schema-and-Validation), and [build commands](https://github.com/vrsarin/obsidian-flowmotion/wiki/Developer-Setup). The full YAML format is in [Advanced: YAML format](https://github.com/vrsarin/obsidian-flowmotion/wiki/Advanced-YAML-Format).
 
 ## Status
 
-FlowMotion is version 0.1.0. The core drawing works and is tested. The Obsidian plugin has not yet been checked inside Obsidian, so test it in your vault first. See the known limits in [docs/advanced-configuration.md](docs/advanced-configuration.md#known-limits).
+FlowMotion is version 0.1.0. Automated tests cover the drawing engine and selected Obsidian desktop workflows, including loading, SVG rendering, settings, and restart persistence. Mobile use and full optional-editor workflows still need manual checks. Test it in a copy of your vault first. See [Known limitations](https://github.com/vrsarin/obsidian-flowmotion/wiki/Known-Limitations).
 
 ## Contributing
 
@@ -112,6 +112,8 @@ Bug reports and ideas are welcome. Open an issue on GitHub.
 
 Run `make test-e2e` to build the plugin and test it in downloaded Obsidian desktop builds.
 On macOS, the E2E configuration prioritizes `/usr/bin` so installer setup uses Apple's `xattr`, not Python's incompatible command.
+
+See the wiki for [testing and examples](https://github.com/vrsarin/obsidian-flowmotion/wiki/Developer-Testing-and-Examples) and [releases and CI](https://github.com/vrsarin/obsidian-flowmotion/wiki/Developer-Releases-and-CI).
 
 ## License
 
