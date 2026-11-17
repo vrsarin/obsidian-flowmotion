@@ -1,5 +1,10 @@
 import * as path from 'node:path';
 
+// Obsidian's DMG setup needs Apple's xattr, not the Python command with the same name.
+if (process.platform === 'darwin') {
+  process.env.PATH = `/usr/bin${path.delimiter}${process.env.PATH ?? ''}`;
+}
+
 // Runs the built plugin (dist/plugin) inside real Obsidian desktop builds.
 // Build first: `npm run build` (the `test:e2e` script does this).
 const cacheDir = path.resolve('.obsidian-cache');

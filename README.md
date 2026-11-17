@@ -110,6 +110,9 @@ FlowMotion is version 0.1.0. The core drawing works and is tested. The Obsidian 
 
 Bug reports and ideas are welcome. Open an issue on GitHub.
 
+Run `make test-e2e` to build the plugin and test it in downloaded Obsidian desktop builds.
+On macOS, the E2E configuration prioritizes `/usr/bin` so installer setup uses Apple's `xattr`, not Python's incompatible command.
+
 ## License
 
 See [LICENSE](LICENSE).

@@ -6,12 +6,35 @@ import { join } from 'node:path';
 
 const ADDON_NOTICE = 'the draw.io editor add-on is not installed';
 
+let mainWindow: string;
+
+async function inMainWindow<T>(action: () => Promise<T>): Promise<T> {
+  const currentWindow = await browser.getWindowHandle();
+  if (currentWindow !== mainWindow) await browser.switchToWindow(mainWindow);
+  try {
+    return await action();
+  } finally {
+    if (currentWindow !== mainWindow) await browser.switchToWindow(currentWindow);
+  }
+}
+
 async function openSettings(): Promise<void> {
+  await browser.switchToWindow(mainWindow);
   await browser.executeObsidian(({ app }) => {
     app.setting.open();
     app.setting.openTabById('flowmotion');
   });
-  await browser.$('.vertical-tab-content .setting-item').waitForExist({ timeout: 10000 });
+  await browser.waitUntil(async () => {
+    const settingsWindow = (await browser.getWindowHandles()).find((handle) => handle !== mainWindow);
+    if (settingsWindow) {
+      await browser.switchToWindow(settingsWindow);
+      return true;
+    }
+    return (await browser.$$('.vertical-tab-content .setting-item')).length > 0;
+  }, { timeout: 10000, timeoutMsg: 'Settings window did not open' });
+  await browser.waitUntil(async () => (await browser.$$('.vertical-tab-content .setting-item')).length > 0, {
+    timeout: 10000, timeoutMsg: 'FlowMotion settings did not appear',
+  });
 }
 
 /** Finds a setting row on the open FlowMotion tab by its visible name. */
@@ -38,26 +61,28 @@ async function toggleIsOn(name: string): Promise<boolean> {
 
 async function setDropdown(name: string, value: string): Promise<void> {
   const item = await setting(name);
-  await item.$('select').selectByAttribute('value', value);
+  await item.$('select:not(.is-measuring)').selectByAttribute('value', value);
 }
 
 async function dropdownValue(name: string): Promise<string> {
   const item = await setting(name);
-  return item.$('select').getValue();
+  return item.$('select:not(.is-measuring)').getValue();
 }
 
 async function dropdownOptions(name: string): Promise<string[]> {
   const item = await setting(name);
-  const opts = await item.$$('select option');
-  return Promise.all(opts.map((o) => o.getAttribute('value')));
+  const opts = await item.$$('select:not(.is-measuring) option');
+  const values: string[] = [];
+  for (const option of opts) values.push(await option.getAttribute('value'));
+  return values;
 }
 
 async function pluginSettings(): Promise<Record<string, unknown>> {
-  return browser.executeObsidian(({ plugins }) => ({ ...(plugins as Record<string, { settings: Record<string, unknown> }>).flowmotion!.settings }));
+  return inMainWindow(() => browser.executeObsidian(({ plugins }) => ({ ...(plugins as Record<string, { settings: Record<string, unknown> }>).flowmotion!.settings })));
 }
 
 async function vaultPath(): Promise<string> {
-  return browser.executeObsidian(({ app }) => (app.vault.adapter as unknown as { basePath: string }).basePath);
+  return inMainWindow(() => browser.executeObsidian(({ app }) => (app.vault.adapter as unknown as { basePath: string }).basePath));
 }
 
 /** The data.json file the plugin writes through saveData(). */
@@ -83,7 +108,9 @@ async function waitForSavedSetting(base: string, key: string, expected: unknown)
 
 async function noticeTexts(): Promise<string[]> {
   const notices = await browser.$$('.notice');
-  return Promise.all(notices.map((n) => n.getText()));
+  const texts: string[] = [];
+  for (const notice of notices) texts.push(await notice.getText());
+  return texts;
 }
 
 async function waitForNotice(fragment: string): Promise<void> {
@@ -96,6 +123,7 @@ async function waitForNotice(fragment: string): Promise<void> {
 describe('FlowMotion settings page', () => {
   beforeEach(async () => {
     await browser.reloadObsidian({ vault: 'e2e/vaults/simple' });
+    mainWindow = await browser.getWindowHandle();
     const pluginDir = join(await vaultPath(), '.obsidian', 'plugins', 'flowmotion');
     rmSync(join(pluginDir, 'drawio', 'index.html'), { force: true });
     copyFileSync('dist/plugin/monaco.js', join(pluginDir, 'monaco.js'));
@@ -156,6 +184,7 @@ describe('FlowMotion settings page', () => {
       await waitForSavedSetting(base, 'autoplay', false);
 
       // Close and reopen the settings tab: the toggle should still be off.
+      await browser.switchToWindow(mainWindow);
       await browser.executeObsidian(({ app }) => app.setting.close());
       await openSettings();
       expect(await toggleIsOn('Autoplay')).toBe(false);
@@ -253,6 +282,7 @@ describe('FlowMotion settings page', () => {
       writeFileSync(join(dir, 'index.html'), '<!doctype html><title>draw.io</title>');
       try {
         await browser.reloadObsidian({ vault: base, copy: false });
+        mainWindow = await browser.getWindowHandle();
         await openSettings();
         await browser.waitUntil(async () => (await (await setting('draw.io editor')).getText()).includes('Status: installed.'), {
           timeout: 5000,
@@ -318,7 +348,9 @@ describe('FlowMotion settings page', () => {
       await waitForSavedSetting(base, 'codeEditor', true);
 
       // The vault is already a temporary copy, so restart it in place.
+      await browser.switchToWindow(mainWindow);
       await browser.reloadObsidian({ vault: base, copy: false });
+      mainWindow = await browser.getWindowHandle();
 
       const saved = await pluginSettings();
       expect(saved).toMatchObject({ autoplay: false, speed: 2, paperLight: 'none', paperDark: 'light', codeEditor: true });
