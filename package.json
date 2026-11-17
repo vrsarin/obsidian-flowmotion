@@ -12,7 +12,6 @@
     "typecheck": "tsc --noEmit",
     "fetch-drawio": "node scripts/fetch-drawio.mjs",
     "install-plugin": "node scripts/install-plugin.mjs",
-    "addons": "node scripts/package-addons.mjs",
     "lint": "eslint src",
     "test:e2e": "npm run build && wdio run ./wdio.conf.mts"
   },

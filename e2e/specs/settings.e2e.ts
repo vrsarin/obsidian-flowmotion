@@ -152,12 +152,12 @@ describe('FlowMotion settings page', () => {
       await setting('Code editor');
     });
 
-    it('shows the add-on folder path and download link in the add-on files note', async () => {
+    it('shows the upstream-source setup instructions in the add-on files note', async () => {
       await openSettings();
       const item = await setting('Add-on files');
       const desc = await item.$('.setting-item-description').getText();
-      expect(desc).toContain('https://github.com/vrsarin/obsidian-flowmotion/releases');
-      expect(desc).toContain('.obsidian/plugins/flowmotion');
+      expect(desc).toContain('https://github.com/vrsarin/obsidian-flowmotion#optional-add-ons');
+      expect(desc).toContain('not included in FlowMotion releases');
     });
 
     it('has no toggle or dropdown on the playback-controls row', async () => {

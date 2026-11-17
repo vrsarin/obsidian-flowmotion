@@ -4,7 +4,7 @@ import { checkRelease } from '../scripts/check-release.mjs';
 
 const manifest = { id: 'flowmotion', version: '0.1.0', minAppVersion: '1.4.0', description: 'Animated diagrams.' };
 const versions = { '0.1.0': '1.4.0' };
-const files = ['dist/plugin/main.js', 'dist/plugin/manifest.json', 'dist/plugin/styles.css', 'dist/addons/flowmotion-addons.zip'];
+const files = ['dist/plugin/main.js', 'dist/plugin/manifest.json', 'dist/plugin/styles.css'];
 
 describe('release check', () => {
   it('accepts a matching plain-semver tag with all files', () => {
@@ -24,7 +24,7 @@ describe('release check', () => {
   it('rejects a missing versions.json entry and missing files', () => {
     const p = checkRelease({ tag: '0.1.0', manifest, versions: {}, files: ['dist/plugin/main.js'] });
     expect(p.some((x: string) => x.includes('versions.json'))).toBe(true);
-    expect(p.filter((x: string) => x.startsWith('missing release file'))).toHaveLength(3);
+    expect(p.filter((x: string) => x.startsWith('missing release file'))).toHaveLength(2);
   });
 
   it('rejects an id that contains "obsidian"', () => {

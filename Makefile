@@ -22,8 +22,8 @@ help:
 	@echo "  make test               Run the unit tests"
 	@echo "  make test-e2e           Run the end-to-end tests"
 	@echo "  make lint               Run ESLint with the Obsidian rules"
-	@echo "  make release-build      Fetch draw.io, build, and package the add-ons into dist/"
-	@echo "  make release-check      Check the version and files are ready to publish (TAG=0.1.0)"
+	@echo "  make release-build      Fetch draw.io and build the plugin and optional add-ons locally"
+	@echo "  make release-check      Check the version and plugin files are ready to publish (TAG=0.1.0)"
 	@echo "  make install-plugin     Copy the plugin into VAULT=\"/path/to/vault\""
 	@echo ""
 	@echo "Local CI via gh act (requires: gh cli + Docker Desktop)"
@@ -58,7 +58,6 @@ release-build:
 	$(NPM) ci
 	$(NPM) run fetch-drawio
 	$(NPM) run build
-	$(NPM) run addons
 
 release-check:
 	node scripts/check-release.mjs "$(or $(TAG),$(shell node -p "require('./manifest.json').version"))"
