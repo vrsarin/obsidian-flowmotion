@@ -35,6 +35,9 @@ describe('lintSource', () => {
     const src = 'elements: []\nscenes:\n  - beats:\n      - sai: hi\n';
     expect(lintSource(src, 'storyboard').some((i) => i.message.includes('did you mean "say"'))).toBe(true);
   });
+  it('accepts paper in inline diagram definitions', () => {
+    expect(lintSource('nodes:\n  - { id: a }\npaper: dark\n')).toEqual([]);
+  });
 });
 
 import { completeAt } from '../src/schema/complete';
@@ -45,6 +48,9 @@ describe('completeAt', () => {
   it('suggests top-level keys not yet used', () => {
     const l = labels(cursor('nodes:\n  - { id: a }\nfl|'));
     expect(l).toContain('flows'); expect(l).not.toContain('nodes');
+  });
+  it('suggests paper as a view option', () => {
+    expect(labels(cursor('nodes:\n  - { id: a }\np|'))).toContain('paper');
   });
   it('suggests event keys inside a list item', () => {
     expect(labels(cursor('nodes:\n  - { id: a }\nevents:\n  - id: e\n    ty|'))).toEqual(expect.arrayContaining(['type', 'node', 'after']));
@@ -133,12 +139,17 @@ describe('formatSource', () => {
     const out = formatSource('diagram:\n    id: x\nnodes:\n -   {id: a}\n # note\n - { id: b }\n')!;
     expect(out).toBe('diagram:\n  id: x\nnodes:\n  - { id: a }\n  # note\n  - { id: b }\n');
   });
-  it('is idempotent and leaves project style alone', () => {
-    const src = 'events:\n  - { id: e, type: process, node: a, after: [x, y] }\n';
+  it('is idempotent and leaves YAML writer spacing alone', () => {
+    const src = 'events:\n  - { id: e, type: process, node: a, after: [ x, y ] }\n';
     expect(formatSource(src)).toBeUndefined();
   });
   it('re-indents JSON', () => expect(formatSource('{"a":[1]}')).toBe('{\n  "a": [\n    1\n  ]\n}\n'));
   it('does not touch text with syntax errors', () => expect(formatSource('nodes: [a\n')).toBeUndefined());
+  it('does not format text DSL or alter bracket spacing inside scalar values', () => {
+    expect(formatSource('flowchart LR\n  a-->b\n')).toBeUndefined();
+    const out = formatSource('label: Keep [ spaces ] here\nother:\n    nested: value\n');
+    expect(out).toContain('Keep [ spaces ] here');
+  });
 });
 
 import { bodyAround, findBlocks } from '../src/schema/blocks';

@@ -20,8 +20,8 @@ export interface MountOptions {
 }
 export interface Mounted { player: Player; destroy(): void }
 
-function button(label: string, text: string, onClick: () => void): HTMLButtonElement {
-  const b = createEl('button');
+function button(doc: Document, label: string, text: string, onClick: () => void): HTMLButtonElement {
+  const b = doc.createElement('button');
   b.type = 'button'; b.className = 'fm-btn'; b.textContent = text;
   b.setAttribute('aria-label', label); b.title = label;
   b.addEventListener('click', onClick);
@@ -30,33 +30,35 @@ function button(label: string, text: string, onClick: () => void): HTMLButtonEle
 
 /** Render a model into `container`, attach the player and controls. Call destroy() to release everything. */
 export function mountModel(container: HTMLElement, model: Model, opts: MountOptions = {}): Mounted {
+  const doc = container.ownerDocument;
+  const win = doc.defaultView ?? window;
   const prefix = `fm${++counter}`;
-  const wrap = createDiv();
+  const wrap = doc.createElement('div');
   wrap.className = 'fm-wrap';
   // Parse as XML and import the nodes: no HTML parsing and no innerHTML. renderSvg output is well-formed XML.
   const parsed = new DOMParser().parseFromString(renderSvg(model, { idPrefix: prefix, theme: opts.theme ?? 'obsidian', transparent: (opts.theme ?? 'obsidian') === 'obsidian' }), 'image/svg+xml');
   if (parsed.getElementsByTagName('parsererror').length) throw new Error('FlowMotion: the diagram produced invalid SVG');
-  wrap.replaceChildren(activeDocument.importNode(parsed.documentElement, true));
+  wrap.replaceChildren(doc.importNode(parsed.documentElement, true));
   const svg = wrap.querySelector('svg') as SVGSVGElement;
-  if (model.backdrop && model.view?.paper === 'none') svg.style.colorScheme = activeDocument.body.classList.contains('theme-dark') ? 'dark' : 'light'; // no sheet: draw.io colours follow Obsidian
+  if (model.backdrop && model.view?.paper === 'none') svg.style.colorScheme = doc.body.classList.contains('theme-dark') ? 'dark' : 'light'; // no sheet: draw.io colours follow Obsidian
   container.appendChild(wrap);
   if (model.view?.width) { wrap.style.width = model.view.width; wrap.classList.add('fm-capped'); }
   const hv = opts.height ?? model.view?.height;
   type Mode = 'fit' | 'normal' | 'full';
   const inSlides = !!container.closest('.reveal'); // Obsidian Slides / Reveal.js: Normal may not fit a slide
   let mode = (inSlides ? 'fit' : model.view?.mode ?? 'fit') as Mode;
-  const modeSel = createEl('select');
+  const modeSel = doc.createElement('select');
   modeSel.className = 'fm-speed fm-mode'; modeSel.setAttribute('aria-label', 'Screen mode');
   for (const [v, l] of [['fit', 'Fit'], ['normal', 'Normal'], ['full', 'Full screen']] as const) {
     if (inSlides && v === 'normal') continue;
-    const o = createEl('option'); o.value = v; o.textContent = l; modeSel.appendChild(o);
+    const o = doc.createElement('option'); o.value = v; o.textContent = l; modeSel.appendChild(o);
   }
   // Reveal lays slides out in a fixed pixel box and scales it, so viewport units (vh) are wrong there:
   // fit the diagram to a share of the slide box instead, leaving room for a title or text around it.
   const fitHeight = (): string | undefined => {
     if (!inSlides) return hv;
     const box = container.closest<HTMLElement>('.slides');
-    const slideH = box ? parseFloat(getComputedStyle(box).height) : NaN;
+    const slideH = box ? parseFloat(win.getComputedStyle(box).height) : NaN;
     const full = Number.isFinite(slideH) && slideH > 0 ? slideH : 700;
     const want = hv && /^[\d.]+vh$/.test(hv) ? (parseFloat(hv) / 100) * full : hv && /^[\d.]+px$/.test(hv) ? parseFloat(hv) : Infinity;
     // Give the diagram what the slide has left after its title and text; never less than a third, never more than 85%.
@@ -81,19 +83,19 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
       if (!wrap.requestFullscreen) { modeSel.value = mode; return; }
       wrap.requestFullscreen().catch(() => { modeSel.value = mode; });
     } else {
-      if (activeDocument.fullscreenElement === wrap) void activeDocument.exitFullscreen();
+      if (doc.fullscreenElement === wrap) void doc.exitFullscreen();
       applyMode(want);
     }
   });
   let before: Mode = mode === 'full' ? 'fit' : mode;
   const onFs = () => {
-    if (activeDocument.fullscreenElement === wrap) { if (mode !== 'full') before = mode; mode = 'full'; modeSel.value = 'full'; svg.style.maxHeight = ''; svg.style.width = ''; }
+    if (doc.fullscreenElement === wrap) { if (mode !== 'full') before = mode; mode = 'full'; modeSel.value = 'full'; svg.style.maxHeight = ''; svg.style.width = ''; }
     else if (mode === 'full') applyMode(before);
   };
-  activeDocument.addEventListener('fullscreenchange', onFs);
+  doc.addEventListener('fullscreenchange', onFs);
   applyMode(mode);
 
-  const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduced = typeof win.matchMedia === 'function' && win.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let playBtn: HTMLButtonElement | undefined, scrub: HTMLInputElement | undefined, time: HTMLElement | undefined;
   const sync = () => {
     if (playBtn) { playBtn.textContent = player.playing ? '⏸' : '▶'; playBtn.setAttribute('aria-label', player.playing ? 'Pause' : 'Play'); }
@@ -102,33 +104,33 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   };
   const player = new Player(svg, model, { speed: opts.speed, loop: opts.loop, onUpdate: sync });
 
-  const bar = createDiv();
+  const bar = doc.createElement('div');
   bar.className = 'fm-controls';
-  const pb = createDiv(); // playback controls, toggled by the button below
+  const pb = doc.createElement('div'); // playback controls, toggled by the button below
   pb.className = 'fm-pb';
-  playBtn = button('Play', '▶', () => player.toggle());
-  scrub = createEl('input');
+  playBtn = button(doc, 'Play', '▶', () => player.toggle());
+  scrub = doc.createElement('input');
   scrub.type = 'range'; scrub.className = 'fm-scrub'; scrub.min = '0'; scrub.max = String(Math.round(player.total)); scrub.value = '0';
   scrub.setAttribute('aria-label', 'Timeline');
   scrub.addEventListener('input', () => { player.pause(); player.seek(Number(scrub.value)); });
-  time = createSpan(); time.className = 'fm-time';
-  const speed = createEl('select');
+  time = doc.createElement('span'); time.className = 'fm-time';
+  const speed = doc.createElement('select');
   speed.className = 'fm-speed'; speed.setAttribute('aria-label', 'Speed');
   for (const s of [0.25, 0.5, 1, 2, 4]) {
-    const o = createEl('option'); o.value = String(s); o.textContent = `${s}×`;
+    const o = doc.createElement('option'); o.value = String(s); o.textContent = `${s}×`;
     if (s === player.speed) o.selected = true;
     speed.appendChild(o);
   }
   speed.addEventListener('change', () => player.setSpeed(Number(speed.value)));
   pb.append(
     playBtn,
-    button('Step back', '⏮', () => player.stepBack()),
-    button('Step forward', '⏭', () => player.stepForward()),
-    button('Reset', '⏹', () => player.reset()),
-    button('Replay', '↻', () => player.replay()),
+    button(doc, 'Step back', '⏮', () => player.stepBack()),
+    button(doc, 'Step forward', '⏭', () => player.stepForward()),
+    button(doc, 'Reset', '⏹', () => player.reset()),
+    button(doc, 'Replay', '↻', () => player.replay()),
     scrub, time, speed,
   );
-  const toggle = button('Show playback controls', '⚙', () => setControls(pb.hidden));
+  const toggle = button(doc, 'Show playback controls', '⚙', () => setControls(pb.hidden));
   const setControls = (on: boolean) => {
     pb.hidden = !on;
     toggle.setAttribute('aria-pressed', String(on));
@@ -142,10 +144,10 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   // The toggle and screen mode are always visible, including in full screen.
   const parts: HTMLElement[] = [pb, toggle, modeSel];
   if (model.backdrop && opts.onPaper) {
-    const sel = createEl('select');
+    const sel = doc.createElement('select');
     sel.className = 'fm-speed fm-mode'; sel.setAttribute('aria-label', 'Drawing background');
     for (const [v, l] of [['default', 'Background: default'], ['light', 'Background: light'], ['dark', 'Background: dark'], ['none', 'Background: none (match theme)']] as const) {
-      const o = createEl('option'); o.value = v; o.textContent = l; sel.appendChild(o);
+      const o = doc.createElement('option'); o.value = v; o.textContent = l; sel.appendChild(o);
     }
     sel.value = ['light', 'dark', 'none'].includes(opts.paperChoice ?? '') ? opts.paperChoice! : 'default';
     sel.addEventListener('change', () => opts.onPaper!(sel.value));
@@ -170,17 +172,19 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
     };
     fix();
     const refit = () => { if (mode === 'fit') applyMode('fit'); };
-    window.setTimeout(refit, 400); // after fonts and the slide layout settle
-    window.addEventListener('resize', fix); window.addEventListener('resize', refit);
-    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(fix) : undefined;
+    win.setTimeout(refit, 400); // after fonts and the slide layout settle
+    win.addEventListener('resize', fix); win.addEventListener('resize', refit);
+    const ResizeObserverCtor = win.ResizeObserver;
+    const ro = typeof ResizeObserverCtor === 'function' ? new ResizeObserverCtor(fix) : undefined;
     ro?.observe(wrap);
-    unscale = () => { window.removeEventListener('resize', fix); window.removeEventListener('resize', refit); ro?.disconnect(); };
+    unscale = () => { win.removeEventListener('resize', fix); win.removeEventListener('resize', refit); ro?.disconnect(); };
   }
 
   // Pause when offscreen; resume only if it was playing before.
   let resumeOnVisible = false;
-  const io = typeof IntersectionObserver === 'function'
-    ? new IntersectionObserver((entries) => {
+  const IntersectionObserverCtor = win.IntersectionObserver;
+  const io = typeof IntersectionObserverCtor === 'function'
+    ? new IntersectionObserverCtor((entries) => {
         const visible = entries.some((e) => e.isIntersecting);
         if (!visible && player.playing) { resumeOnVisible = true; player.pause(); }
         else if (visible && resumeOnVisible) { resumeOnVisible = false; player.play(); }
@@ -193,5 +197,5 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   else if (opts.autoplay ?? model.animation.autoplay) player.play();
   sync();
 
-  return { player, destroy() { unscale?.(); activeDocument.removeEventListener("fullscreenchange", onFs); io?.disconnect(); player.destroy(); wrap.remove(); } };
+  return { player, destroy() { unscale?.(); doc.removeEventListener("fullscreenchange", onFs); io?.disconnect(); player.destroy(); wrap.remove(); } };
 }

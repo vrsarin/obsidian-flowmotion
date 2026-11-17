@@ -37,3 +37,24 @@ describe('storyboard header and footer', () => {
     expect(h(off)).toBeLessThan(h(on));
   });
 });
+
+describe('short storyboard beats', () => {
+  it('reveals rows no later than the end of a beat without transfers', async () => {
+    const source = `elements:
+  - id: card
+    type: rectangle
+    content:
+      - type: title
+        text: Card
+scenes:
+  - beats:
+      - say: short
+        ms: 200
+        show:
+          card:
+            - text: Hello
+`;
+    const m = await buildStoryModel(source);
+    expect(m.timeline.items.find((i) => i.type === 'show')?.start).toBe(200);
+  });
+});

@@ -1,4 +1,5 @@
 import { parseDocument } from 'yaml';
+import { isTextSource } from '../text/parse';
 
 /**
  * Canonical layout for a FlowMotion definition: 2-space indent, no line folding, `{ a: 1 }` padding.
@@ -8,7 +9,7 @@ import { parseDocument } from 'yaml';
  */
 export function formatSource(source: string): string | undefined {
   const text = source.trim();
-  if (!text) return undefined;
+  if (!text || isTextSource(source)) return undefined;
   let out: string;
   if (/^[{[]/.test(text)) {
     try { out = `${JSON.stringify(JSON.parse(text), null, 2)}\n`; }
@@ -21,7 +22,5 @@ function formatYaml(source: string): string | undefined {
   const doc = parseDocument(source, { strict: false, prettyErrors: false });
   if (doc.errors.length) return undefined;
   const out = doc.toString({ indent: 2, lineWidth: 0, flowCollectionPadding: true, minContentWidth: 0 });
-  // Project style: `{ id: a }` is padded, `[a, b]` is not. Lines holding quotes are left to the YAML writer.
-  const tidy = out.split('\n').map((l) => (/["']/.test(l) ? l : l.replace(/\[ +/g, '[').replace(/ +\]/g, ']'))).join('\n');
-  return tidy.endsWith('\n') ? tidy : `${tidy}\n`;
+  return out.endsWith('\n') ? out : `${out}\n`;
 }

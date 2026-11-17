@@ -30,7 +30,7 @@ export async function buildModel(source: string): Promise<Model> {
       const cell = d.fixed.edgeCell?.[e.id], pts = cell ? routes.get(cell) : undefined;
       if (pts && pts.length >= 2) e.path = pathFromPoints(pts.map((q) => ({ x: q.x + ox, y: q.y + oy })));
     }
-    return { ...base, layout, backdrop: { inner: drawn.inner, w: drawn.w, h: drawn.h, ox, oy } };
+    return { ...base, layout, backdrop: { inner: drawn.inner, rootId: drawn.rootId, w: drawn.w, h: drawn.h, ox, oy } };
   }
   if (!isTextSource(source) && detectKind(source) === 'storyboard') {
     const sb = parseStoryboard(source);

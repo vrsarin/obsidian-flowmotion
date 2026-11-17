@@ -2,11 +2,12 @@ import { readFileSync } from 'node:fs';
 import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { buildModel } from '../src/model';
-import { extractMxfile, isDrawioSource, parseDrawio } from '../src/drawio/parse';
+import { extractMxfile, isDrawioSource, modelXml, parseDrawio } from '../src/drawio/parse';
 import { importDrawio } from '../src/drawio/import';
-import { sanitizeSvg } from '../src/drawio/sanitize';
+import { sanitizeSvg, svgEdgeRoutes } from '../src/drawio/sanitize';
 import { BLANK_DRAWIO, decodeSvg, isDrawioName } from '../src/obsidian/drawio-pane';
 import { renderSvg } from '../src/render/svg';
+import { animatedSvg } from '../src/export/html';
 
 const plain = readFileSync(new URL('./fixtures/devops.drawio', import.meta.url), 'utf8');
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -53,6 +54,11 @@ describe('draw.io import', () => {
     await expect(buildModel('<mxfile><diagram>@@@not-base64@@@</diagram></mxfile>')).rejects.toThrow(/decompress|decode/i);
     await expect(buildModel('<mxfile><diagram><mxGraphModel><root><mxCell id="0"/></root></mxGraphModel></diagram></mxfile>')).rejects.toThrow(/no shapes/i);
   });
+
+  it('stops decompression when the output exceeds the size limit', async () => {
+    const bomb = deflateRawSync(Buffer.alloc(20_000_001)).toString('base64');
+    await expect(modelXml(`<mxfile><diagram>${bomb}</diagram></mxfile>`)).rejects.toThrow(/too large once decompressed/i);
+  });
 });
 
 describe('draw.io editor glue', () => {
@@ -88,6 +94,9 @@ describe('overlay on a draw.io SVG', () => {
     const n = m.layout.nodes.find((q) => q.id === 'n_users')!;
     expect(n.x - m.backdrop!.ox).toBeCloseTo(160, 0);
     expect(n.y - m.backdrop!.oy).toBeCloseTo(0, 0);
+    expect(out).toContain(`id="x-bd-${m.backdrop!.rootId!.slice('fmbd-'.length)}"`);
+    expect(out).toContain(`#x-bd-${m.backdrop!.rootId!.slice('fmbd-'.length)}{--ge-adaptive-bg:`);
+    expect(animatedSvg(m, 'dark')).toContain('animateMotion');
   });
   it('paper option picks the sheet behind the drawing', async () => {
     const m = await buildModel(svg);
@@ -97,9 +106,27 @@ describe('overlay on a draw.io SVG', () => {
     expect(renderSvg({ ...m, view: { paper: 'dark' } }, { idPrefix: 'x' })).toContain('color-scheme:dark');
   });
   it('drops scripts and outside links from the drawing', () => {
-    const bad = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><script>alert(1)</script><rect onclick="x()" width="5" height="5" style="fill:url(http://e.com/a)"/><image href="http://e.com/a.png"/></svg>';
+    const bad = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" id="root"><style>body{display:none!important} #root{--ge-adaptive-bg:#fff}</style><script>alert(1)</script><rect onclick="x()" width="5" height="5" style='background-image:image-set("https://e.com/a.png" 1x);fill:url(http://e.com/a)'/><image href="http://e.com/a.png"/></svg>`;
     const r = sanitizeSvg(bad, 'p')!;
     expect(r.inner).not.toMatch(/script|onclick|e\.com/);
+    expect(r.inner).not.toContain('body{');
+    expect(r.inner).toContain('#p-root{--ge-adaptive-bg:#fff}');
+  });
+  it('namespaces backdrop ids and fragment references per rendered copy', async () => {
+    const m = await buildModel(svg);
+    const backdrop = sanitizeSvg('<svg xmlns="http://www.w3.org/2000/svg" id="root" viewBox="0 0 10 10"><defs><linearGradient id="paint"><stop offset="0" stop-color="#fff"/></linearGradient></defs><rect width="10" height="10" fill="url(#paint)"/></svg>', 'fmbd')!;
+    const modelWithDefs = { ...m, backdrop: { ...m.backdrop!, ...backdrop } };
+    const a = renderSvg(modelWithDefs, { idPrefix: 'copy-a' });
+    const b = renderSvg(modelWithDefs, { idPrefix: 'copy-b' });
+    expect(a).toContain('id="copy-a-bd-paint"');
+    expect(a).toContain('fill="url(#copy-a-bd-paint)"');
+    expect(b).toContain('id="copy-b-bd-paint"');
+    expect(b).toContain('fill="url(#copy-b-bd-paint)"');
+  });
+  it('applies each SVG group transform once when extracting connector paths', () => {
+    const routes = svgEdgeRoutes('<svg><g data-cell-id="e" transform="translate(10 20)"><g transform="translate(3 4)"><path fill="none" d="M1 2 L5 6"/></g></g></svg>');
+    expect(routes.get('e')?.[0]).toEqual({ x: 14, y: 26 });
+    expect(routes.get('e')?.[1]).toEqual({ x: 18, y: 30 });
   });
 });
 

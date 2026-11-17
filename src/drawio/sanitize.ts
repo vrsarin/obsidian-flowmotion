@@ -11,9 +11,43 @@ const HTML_TAGS = new Set(['div', 'span', 'p', 'br', 'b', 'i', 'u', 's', 'strong
 const VOID = new Set(['br']);
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-/** Every url(...) must point inside the document; no scripts, imports or legacy behaviours. */
-const cssOk = (v: string) => !/@import|expression\s*\(|javascript:|behavior\s*:|-moz-binding|<|\\/i.test(v) && [...v.matchAll(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi)].every((m) => m[2]!.startsWith('#'));
-const refOk = (v: string) => v.startsWith('#') || /^data:image\/(?:png|jpe?g|gif|webp|svg\+xml)(?:;[\w=.-]+)*;base64,[A-Za-z0-9+/=\s]*$/i.test(v);
+const SAFE_CSS_FUNCTIONS = new Set(['var', 'light-dark', 'rgb', 'rgba', 'hsl', 'hsla', 'calc', 'min', 'max', 'clamp']);
+
+/** CSS values may use local fragments and non-resource functions only. */
+const cssOk = (v: string) => {
+  if (/@|\\|\/\*|<|javascript:|expression\s*\(|behavior\s*:|-moz-binding/i.test(v)) return false;
+  const withoutUrls = v.replace(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi, (_m, _q, href: string) => href.startsWith('#') ? '' : '!');
+  if (withoutUrls.includes('!') || /\burl\s*\(/i.test(withoutUrls)) return false;
+  return [...withoutUrls.matchAll(/([-\w]+)\s*\(/g)].every((m) => SAFE_CSS_FUNCTIONS.has(m[1]!.toLowerCase()));
+};
+const refOk = (v: string) => v.startsWith('#') || /^data:image\/(?:png|jpe?g|gif|webp)(?:;[\w=.-]+)*;base64,[A-Za-z0-9+/=\s]*$/i.test(v);
+
+function safeStylesheet(src: string, rootId: string | undefined, scopedId: string): string {
+  if (!rootId || !/^[\w.-]+$/.test(rootId)) return '';
+  let css = src.trim();
+  const supports = /^@supports\s*\(\s*color\s*:\s*light-dark\(\s*#[\da-f]{3,8}\s*,\s*#[\da-f]{3,8}\s*\)\s*\)\s*\{([\s\S]*)\}\s*$/i.exec(css);
+  if (supports) css = supports[1]!;
+  if (/@|\/\*|\\/.test(css)) return '';
+  const output: string[] = [];
+  let at = 0;
+  while (at < css.length) {
+    while (/\s/.test(css[at] ?? '')) at++;
+    if (at === css.length) break;
+    const open = css.indexOf('{', at), close = open < 0 ? -1 : css.indexOf('}', open + 1);
+    if (open < 0 || close < 0 || css.indexOf('{', open + 1) >= 0 && css.indexOf('{', open + 1) < close) return '';
+    const selectors = css.slice(at, open).trim().split(',').map((s) => s.trim());
+    const body = css.slice(open + 1, close);
+    const declarations = body.split(';').map((d) => d.trim()).filter(Boolean);
+    const safe = selectors.length > 0 && selectors.every((s) => s === `#${rootId}`) &&
+      declarations.length > 0 && declarations.every((d) => {
+        const m = /^(--ge-adaptive-(?:bg|fg))\s*:\s*(.+)$/.exec(d);
+        return !!m && cssOk(m[2]!);
+      });
+    if (safe) output.push(`#${scopedId}{${declarations.join(';')}}`);
+    at = close + 1;
+  }
+  return output.join('');
+}
 
 /** The sanitised content of a draw.io SVG (without the outer <svg>), with every id prefixed so several copies can share a page. */
 export function sanitizeSvg(svg: string, prefix: string): (Backdrop & { rootId?: string }) | undefined {
@@ -27,8 +61,6 @@ export function sanitizeSvg(svg: string, prefix: string): (Backdrop & { rootId?:
   const rootId = root.attrs.id;
   const pid = (id: string) => `${prefix}-${id}`;
   const rewriteRefs = (v: string) => v.replace(/url\(\s*(['"]?)#([^'")]+)\1\s*\)/g, (_m, _q, id: string) => `url(#${pid(id)})`);
-  const rewriteCss = (v: string) => (rootId ? v.split(`#${rootId}`).join(`#${pid(rootId)}`) : v);
-  let ok = true;
 
   const out = (n: XNode, inHtml: boolean): string => {
     if (n.tag === '#text') return esc(n.text ?? '');
@@ -38,7 +70,7 @@ export function sanitizeSvg(svg: string, prefix: string): (Backdrop & { rootId?:
     if (!isHtml && !SVG_TAGS.has(name) && !(inHtml && HTML_TAGS.has(name))) return ''; // unknown element: drop with its children
     if (name === 'style') {
       const css = n.children.map((c) => c.text ?? '').join('');
-      return cssOk(css) ? `<style>${rewriteCss(rewriteRefs(css)).replace(/</g, '')}</style>` : '';
+      return `<style>${safeStylesheet(css, rootId, rootId ? pid(rootId) : '')}</style>`;
     }
     const attrs: string[] = [];
     for (const [k, v] of Object.entries(n.attrs)) {
@@ -50,6 +82,10 @@ export function sanitizeSvg(svg: string, prefix: string): (Backdrop & { rootId?:
         continue;
       }
       if (k === 'id') { attrs.push(`id="${esc(pid(v))}"`); continue; }
+      if (/^(aria-labelledby|aria-describedby|for)$/.test(k)) {
+        attrs.push(`${key}="${esc(v.split(/\s+/).filter(Boolean).map(pid).join(' '))}"`);
+        continue;
+      }
       if (k === 'style' || /^(fill|stroke|filter|clip-path|mask|marker-start|marker-mid|marker-end)$/.test(k)) { if (!cssOk(v)) continue; attrs.push(`${k}="${esc(rewriteRefs(v))}"`); continue; }
       if (/javascript:|data:text|vbscript:/i.test(v)) continue;
       attrs.push(`${k}="${esc(v)}"`);
@@ -60,9 +96,31 @@ export function sanitizeSvg(svg: string, prefix: string): (Backdrop & { rootId?:
     if (name === 'div' || (inHtml && HTML_TAGS.has(name))) return VOID.has(name) ? `<${name}/>` : `<${name}${attrs.length ? ' ' + attrs.join(' ') : ''}>${kids}</${name}>`;
     return `<${tag}${attrs.length ? ' ' + attrs.join(' ') : ''}>${kids}</${tag}>`;
   };
-  void ok;
   const inner = root.children.map((c) => out(c, false)).join('');
   return { inner, w, h, ...(rootId && { rootId: pid(rootId) }) };
+}
+
+/** Re-namespace already-sanitized SVG definitions for each rendered copy. */
+export function namespaceSanitizedSvg(inner: string, prefix: string, replacement: string): string {
+  let doc: XNode;
+  try { doc = parseXml(inner); } catch { return ''; }
+  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const ref = new RegExp(`#${escapedPrefix}-([\\w.-]+)`, 'g');
+  const escAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const serialize = (n: XNode, inStyle = false): string => {
+    if (n.tag === '#text') return esc(inStyle ? (n.text ?? '').replace(ref, `#${replacement}-$1`) : n.text ?? '');
+    const attrs = Object.entries(n.attrs).map(([k, v]) => {
+      const value = k === 'id' && v.startsWith(`${prefix}-`)
+        ? `${replacement}-${v.slice(prefix.length + 1)}`
+        : /^(aria-labelledby|aria-describedby|for)$/.test(k)
+          ? v.split(/\s+/).map((id) => id.startsWith(`${prefix}-`) ? `${replacement}-${id.slice(prefix.length + 1)}` : id).join(' ')
+          : v.replace(ref, `#${replacement}-$1`);
+      return `${k}="${escAttr(value)}"`;
+    }).join(' ');
+    const children = n.children.map((c) => serialize(c, inStyle || n.tag === 'style')).join('');
+    return `<${n.tag}${attrs ? ` ${attrs}` : ''}>${children}</${n.tag}>`;
+  };
+  return doc.children.map((n) => serialize(n)).join('');
 }
 
 /** Flatten an SVG path `d` (absolute or relative M L H V C Q Z) into points. */
@@ -113,7 +171,7 @@ export function svgEdgeRoutes(svg: string): Map<string, Pt[]> {
   const walk = (n: XNode, off: Pt) => {
     const o = translateOf(n), at = { x: off.x + o.x, y: off.y + o.y };
     const id = n.attrs['data-cell-id'];
-    if (id && !out.has(id)) { const r = firstLine(n, at); if (r) out.set(id, r); }
+    if (id && !out.has(id)) { const r = firstLine(n, off); if (r) out.set(id, r); }
     for (const c of n.children) walk(c, at);
   };
   walk(root, { x: 0, y: 0 });
