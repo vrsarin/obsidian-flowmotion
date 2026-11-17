@@ -8,6 +8,10 @@ type Fs = typeof import('fs');
 type Path = typeof import('path');
 
 const MAX_REDIRECTS = 5;
+const MAX_METADATA_BYTES = 1024 * 1024;
+const MAX_ARCHIVE_BYTES = 128 * 1024 * 1024;
+const MAX_ENTRY_BYTES = 64 * 1024 * 1024;
+const MAX_TOTAL_EXTRACTED_BYTES = 256 * 1024 * 1024;
 
 function get(https: Https, url: string, redirects = MAX_REDIRECTS): Promise<import('http').IncomingMessage> {
   return new Promise((resolve, reject) => {
@@ -26,10 +30,20 @@ function get(https: Https, url: string, redirects = MAX_REDIRECTS): Promise<impo
   });
 }
 
-async function text(https: Https, url: string): Promise<string> {
+async function download(https: Https, url: string, maxBytes: number): Promise<Buffer> {
   const chunks: Buffer[] = [];
-  for await (const c of await get(https, url)) chunks.push(c as Buffer);
-  return Buffer.concat(chunks).toString('utf8');
+  let size = 0;
+  for await (const c of await get(https, url)) {
+    const chunk = c as Buffer;
+    size += chunk.length;
+    if (size > maxBytes) throw new Error(`download exceeds the ${maxBytes}-byte limit`);
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks, size);
+}
+
+async function text(https: Https, url: string): Promise<string> {
+  return (await download(https, url, MAX_METADATA_BYTES)).toString('utf8');
 }
 
 const active = new Set<string>();
@@ -57,8 +71,17 @@ export async function installAddon(spec: AddonSpec, pluginRoot: string): Promise
     const select = (p: string) => { const t = spec.target(p); if (t !== null) map.set(p, t); return t !== null; };
     const onFile = async (p: string, data: Uint8Array) => { await save(map.get(p)!, data); map.delete(p); files++; };
     const parts: Buffer[] = [];
-    for await (const c of res) parts.push(c as Buffer);
-    await unzip(Buffer.concat(parts), select, onFile, (d) => zlib.inflateRawSync(d));
+    let archiveBytes = 0;
+    for await (const c of res) {
+      const chunk = c as Buffer;
+      archiveBytes += chunk.length;
+      if (archiveBytes > MAX_ARCHIVE_BYTES) throw new Error(`add-on archive exceeds the ${MAX_ARCHIVE_BYTES}-byte limit`);
+      parts.push(chunk);
+    }
+    await unzip(Buffer.concat(parts, archiveBytes), select, onFile, (d, maxOutputBytes) => zlib.inflateRawSync(d, { maxOutputLength: maxOutputBytes }), {
+      maxEntryBytes: MAX_ENTRY_BYTES,
+      maxTotalBytes: MAX_TOTAL_EXTRACTED_BYTES,
+    });
     for (const x of source.extras ?? []) await save(x.name, Buffer.from(await text(https, x.url)));
     if (!fs.existsSync(path.join(tmp, spec.marker)) || files === 0) throw new Error('the download did not contain the expected files');
     await fs.promises.writeFile(path.join(tmp, 'VERSION'), `${source.label}\n`);

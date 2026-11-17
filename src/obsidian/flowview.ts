@@ -27,6 +27,23 @@ export class FlowView extends TextFileView {
   getIcon() { return 'workflow'; }
   // draw.io files save their own data; never let the text pane overwrite them.
   getViewData() { return isDrawioName(this.file?.name) ? this.drawioData : this.pane.getValue(); }
+  async saveDrawioBeforeAddonRemoval() {
+    if (!isDrawioName(this.file?.name)) return;
+    await this.drawio?.flush();
+    await this.save();
+  }
+  retireDrawioPane() {
+    if (!isDrawioName(this.file?.name)) return;
+    this.opts.drawio = false;
+    this.drawio?.destroy();
+    this.drawio = undefined;
+    this.setViewData(this.drawioData, false);
+  }
+  restoreDrawioPane() {
+    if (!isDrawioName(this.file?.name)) return;
+    this.opts.drawio = true;
+    this.setViewData(this.drawioData, false);
+  }
   setViewData(data: string, _clear: boolean) {
     if (isDrawioName(this.file?.name)) {
       this.pane.root.hide();

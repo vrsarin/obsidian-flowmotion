@@ -268,7 +268,8 @@ describe('FlowMotion settings page', () => {
       });
     });
 
-    it('turning draw.io on downloads it and turning it off deletes it', async () => {
+    it('turning draw.io on downloads it and turning it off deletes it', async function () {
+      this.timeout(180000);
       const dir = join(await vaultPath(), '.obsidian', 'plugins', 'flowmotion', 'drawio');
       await openSettings();
       await setToggle('draw.io editor', true);

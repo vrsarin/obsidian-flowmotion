@@ -20,6 +20,8 @@ export class DrawioPane {
   private ready = false;
   private xml = BLANK_MXFILE;
   private dead = false;
+  private exportQueue: Promise<void> = Promise.resolve();
+  private exportRequest?: { resolve(): void; reject(error: Error): void; timer: number };
   private onMsg = (ev: MessageEvent) => this.handle(ev);
 
   constructor(parent: HTMLElement, private o: DrawioOptions) {
@@ -52,6 +54,32 @@ export class DrawioPane {
   private post(msg: object) { this.frame?.contentWindow?.postMessage(JSON.stringify(msg), '*'); }
   private load() { this.pending = this.xml; this.post({ action: 'load', xml: this.xml, autosave: 1 }); }
 
+  private export(xml: string): Promise<void> {
+    const task = this.exportQueue.then(() => new Promise<void>((resolve, reject) => {
+      if (!this.frame || this.dead) { reject(new Error('draw.io editor closed before saving')); return; }
+      const timer = window.setTimeout(() => {
+        this.exportRequest = undefined;
+        reject(new Error('timed out saving the draw.io editor'));
+      }, 10000);
+      this.exportRequest = { resolve, reject, timer };
+      this.post({ action: 'export', format: 'xmlsvg', xml, spin: 'Saving' });
+    }));
+    this.exportQueue = task.catch((e) => { console.error('FlowMotion: draw.io export failed', e); });
+    return task;
+  }
+
+  /** Exports the latest editor state before the add-on server or files are removed. */
+  async flush(): Promise<void> {
+    if (!this.frame || !this.ready || this.dead) return;
+    let revision: number;
+    do {
+      revision = this.revision;
+      await this.export(this.pending);
+    } while (revision !== this.revision);
+  }
+
+  private revision = 0;
+
   private handle(ev: MessageEvent) {
     if (this.dead || !this.frame || ev.source !== this.frame.contentWindow || typeof ev.data !== 'string') return;
     let m: { event?: string; xml?: string; data?: string; format?: string };
@@ -59,18 +87,40 @@ export class DrawioPane {
     switch (m.event) {
       case 'init': this.ready = true; this.load(); break;
       case 'autosave': case 'save':
-        if (typeof m.xml === 'string') { this.pending = m.xml; this.post({ action: 'export', format: 'xmlsvg', xml: m.xml, spin: 'Saving' }); }
+        if (typeof m.xml === 'string') {
+          this.pending = this.xml = m.xml;
+          this.revision++;
+          void this.export(m.xml).catch(() => undefined);
+        }
         break;
       case 'export': {
         const svg = typeof m.data === 'string' ? decodeSvg(m.data) : undefined;
-        if (svg) this.o.onSave(svg);
+        const request = this.exportRequest;
+        if (request) {
+          window.clearTimeout(request.timer);
+          this.exportRequest = undefined;
+          if (svg) {
+            this.o.onSave(svg);
+            request.resolve();
+          } else request.reject(new Error('draw.io returned an invalid SVG while saving'));
+        } else if (svg) this.o.onSave(svg);
         break;
       }
       case 'exit': this.o.onExit(); break;
     }
   }
 
-  destroy() { this.dead = true; window.removeEventListener('message', this.onMsg); this.frame?.remove(); this.root.remove(); }
+  destroy() {
+    this.dead = true;
+    if (this.exportRequest) {
+      window.clearTimeout(this.exportRequest.timer);
+      this.exportRequest.reject(new Error('draw.io editor closed before saving'));
+      this.exportRequest = undefined;
+    }
+    window.removeEventListener('message', this.onMsg);
+    this.frame?.remove();
+    this.root.remove();
+  }
 }
 
 /** draw.io hands the SVG back as a data URI (base64 or percent-encoded). */

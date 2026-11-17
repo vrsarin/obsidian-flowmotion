@@ -29,16 +29,40 @@ describe('add-on downloads', () => {
   it('reads stored and deflated entries from a zip', async () => {
     const zlib = await import('node:zlib');
     const crc = 0; const nameA = enc.encode('a.txt'), nameB = enc.encode('dir/b.txt');
-    const A = enc.encode('hello'), B = zlib.deflateRawSync(enc.encode('x'.repeat(50)));
+    const A = enc.encode('hello'), rawB = enc.encode('x'.repeat(50)), B = zlib.deflateRawSync(rawB);
     const le = (n: number, bytes: number) => Array.from({ length: bytes }, (_, i) => (n >>> (8 * i)) & 255);
-    const local = (name: Uint8Array, method: number, data: Uint8Array) => [...le(0x04034b50, 4), ...le(20, 2), ...le(0, 2), ...le(method, 2), ...le(0, 4), ...le(crc, 4), ...le(data.length, 4), ...le(data.length, 4), ...le(name.length, 2), ...le(0, 2), ...name, ...data];
-    const l1 = local(nameA, 0, A), l2 = local(nameB, 8, B);
-    const central = (name: Uint8Array, method: number, data: Uint8Array, off: number) => [...le(0x02014b50, 4), ...le(20, 2), ...le(20, 2), ...le(0, 2), ...le(method, 2), ...le(0, 4), ...le(crc, 4), ...le(data.length, 4), ...le(data.length, 4), ...le(name.length, 2), ...le(0, 2), ...le(0, 2), ...le(0, 2), ...le(0, 2), ...le(0, 4), ...le(off, 4), ...name];
-    const c = [...central(nameA, 0, A, 0), ...central(nameB, 8, B, l1.length)];
+    const local = (name: Uint8Array, method: number, data: Uint8Array, size: number) => [...le(0x04034b50, 4), ...le(20, 2), ...le(0, 2), ...le(method, 2), ...le(0, 4), ...le(crc, 4), ...le(data.length, 4), ...le(size, 4), ...le(name.length, 2), ...le(0, 2), ...name, ...data];
+    const l1 = local(nameA, 0, A, A.length), l2 = local(nameB, 8, B, rawB.length);
+    const central = (name: Uint8Array, method: number, data: Uint8Array, size: number, off: number) => [...le(0x02014b50, 4), ...le(20, 2), ...le(20, 2), ...le(0, 2), ...le(method, 2), ...le(0, 4), ...le(crc, 4), ...le(data.length, 4), ...le(size, 4), ...le(name.length, 2), ...le(0, 2), ...le(0, 2), ...le(0, 2), ...le(0, 2), ...le(0, 4), ...le(off, 4), ...name];
+    const c = [...central(nameA, 0, A, A.length, 0), ...central(nameB, 8, B, rawB.length, l1.length)];
     const end = [...le(0x06054b50, 4), ...le(0, 2), ...le(0, 2), ...le(2, 2), ...le(2, 2), ...le(c.length, 4), ...le(l1.length + l2.length, 4), ...le(0, 2)];
     const zip = Uint8Array.from([...l1, ...l2, ...c, ...end]);
     const got: Record<string, string> = {};
-    await unzip(zip, () => true, (p, d) => { got[p] = new TextDecoder().decode(d); }, (d) => zlib.inflateRawSync(d));
+    await unzip(zip, () => true, (p, d) => { got[p] = new TextDecoder().decode(d); }, (d, maxOutputBytes) => zlib.inflateRawSync(d, { maxOutputLength: maxOutputBytes }), { maxEntryBytes: 100, maxTotalBytes: 100 });
     expect(got).toEqual({ 'a.txt': 'hello', 'dir/b.txt': 'x'.repeat(50) });
+  });
+
+  it('rejects a selected entry that exceeds the extraction budget before inflating it', async () => {
+    const zlib = await import('node:zlib');
+    const content = enc.encode('x'.repeat(10_000));
+    const compressed = zlib.deflateRawSync(content);
+    const name = enc.encode('js/app.min.js');
+    const le = (n: number, bytes: number) => Array.from({ length: bytes }, (_, i) => (n >>> (8 * i)) & 255);
+    const local = [...le(0x04034b50, 4), ...le(20, 2), ...le(0, 2), ...le(8, 2), ...le(0, 4), ...le(0, 4), ...le(compressed.length, 4), ...le(content.length, 4), ...le(name.length, 2), ...le(0, 2), ...name, ...compressed];
+    const central = [...le(0x02014b50, 4), ...le(20, 2), ...le(20, 2), ...le(0, 2), ...le(8, 2), ...le(0, 4), ...le(0, 4), ...le(compressed.length, 4), ...le(content.length, 4), ...le(name.length, 2), ...le(0, 2), ...le(0, 2), ...le(0, 2), ...le(0, 2), ...le(0, 4), ...le(0, 4), ...name];
+    const end = [...le(0x06054b50, 4), ...le(0, 2), ...le(0, 2), ...le(1, 2), ...le(1, 2), ...le(central.length, 4), ...le(local.length, 4), ...le(0, 2)];
+    await expect(unzip(Uint8Array.from([...local, ...central, ...end]), () => true, () => {}, (data, maxOutputBytes) => zlib.inflateRawSync(data, { maxOutputLength: maxOutputBytes }), { maxEntryBytes: 100, maxTotalBytes: 100 })).rejects.toThrow('entry exceeds the 100-byte limit');
+  });
+
+  it('passes the remaining extraction budget to the inflater', async () => {
+    const zlib = await import('node:zlib');
+    const content = enc.encode('x'.repeat(10_000));
+    const compressed = zlib.deflateRawSync(content);
+    const name = enc.encode('js/app.min.js');
+    const le = (n: number, bytes: number) => Array.from({ length: bytes }, (_, i) => (n >>> (8 * i)) & 255);
+    const local = [...le(0x04034b50, 4), ...le(20, 2), ...le(0, 2), ...le(8, 2), ...le(0, 4), ...le(0, 4), ...le(compressed.length, 4), ...le(50, 4), ...le(name.length, 2), ...le(0, 2), ...name, ...compressed];
+    const central = [...le(0x02014b50, 4), ...le(20, 2), ...le(20, 2), ...le(0, 2), ...le(8, 2), ...le(0, 4), ...le(0, 4), ...le(compressed.length, 4), ...le(50, 4), ...le(name.length, 2), ...le(0, 2), ...le(0, 2), ...le(0, 2), ...le(0, 2), ...le(0, 4), ...le(0, 4), ...name];
+    const end = [...le(0x06054b50, 4), ...le(0, 2), ...le(0, 2), ...le(1, 2), ...le(1, 2), ...le(central.length, 4), ...le(local.length, 4), ...le(0, 2)];
+    await expect(unzip(Uint8Array.from([...local, ...central, ...end]), () => true, () => {}, (data, maxOutputBytes) => zlib.inflateRawSync(data, { maxOutputLength: maxOutputBytes }), { maxEntryBytes: 100, maxTotalBytes: 100 })).rejects.toThrow();
   });
 });

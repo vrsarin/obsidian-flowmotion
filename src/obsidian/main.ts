@@ -211,8 +211,22 @@ export default class FlowMotionPlugin extends Plugin {
 
   /** Stops using an add-on and deletes its files (the add-on was turned off). */
   async releaseAddon(id: AddonId) {
+    let retiredViews: FlowView[] = [];
+    if (id === 'drawio') {
+      const views = this.app.workspace.getLeavesOfType(FLOW_VIEW).map((leaf) => leaf.view)
+        .filter((view): view is FlowView => view instanceof FlowView && isDrawioName(view.file?.name));
+      for (const view of views) await view.saveDrawioBeforeAddonRemoval();
+      for (const view of views) view.retireDrawioPane();
+      retiredViews = views;
+    }
     this.drawioServer.stop();
-    await removeAddon(ADDONS[id], this.pluginRoot);
+    try { await removeAddon(ADDONS[id], this.pluginRoot); }
+    catch (e) {
+      if (id === 'drawio' && await this.app.vault.adapter.exists(`${this.pluginDir}/${ADDONS.drawio.dir}/${ADDONS.drawio.marker}`)) {
+        for (const view of retiredViews) view.restoreDrawioPane();
+      }
+      throw e;
+    }
   }
 
   async newDrawio(dir: string) {
