@@ -65,7 +65,7 @@ describe('settings page', () => {
     const row = allSettings.find((x) => x.name === 'draw.io editor')!;
     notices.length = 0;
     await row.toggle!.handler(true);
-    expect(installAddon).toHaveBeenCalledWith(expect.objectContaining({ dir: 'drawio' }), '/vault/.obsidian/plugins/flowmotion');
+    expect(installAddon).toHaveBeenCalledWith(expect.objectContaining({ dir: 'drawio' }), expect.any(FileSystemAdapter), '/vault/.obsidian/plugins/flowmotion');
     expect(saves.at(-1)).toMatchObject({ drawioEnabled: true });
     expect(notices.some((n) => n.includes('draw.io editor') && n.includes('is installed'))).toBe(true);
   });

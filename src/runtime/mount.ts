@@ -20,8 +20,10 @@ export interface MountOptions {
 }
 export interface Mounted { player: Player; destroy(): void }
 
-function button(doc: Document, label: string, text: string, onClick: () => void): HTMLButtonElement {
-  const b = doc.createElement('button');
+type ElementFactory = <K extends keyof HTMLElementTagNameMap>(tag: K) => HTMLElementTagNameMap[K];
+
+function button(create: ElementFactory, label: string, text: string, onClick: () => void): HTMLButtonElement {
+  const b = create('button');
   b.type = 'button'; b.className = 'fm-btn'; b.textContent = text;
   b.setAttribute('aria-label', label); b.title = label;
   b.addEventListener('click', onClick);
@@ -32,26 +34,30 @@ function button(doc: Document, label: string, text: string, onClick: () => void)
 export function mountModel(container: HTMLElement, model: Model, opts: MountOptions = {}): Mounted {
   const doc = container.ownerDocument;
   const win = doc.defaultView ?? window;
+  // Standalone HTML and iframe windows do not have Obsidian's DOM helpers.
+  const create: ElementFactory = (tag) => doc.defaultView && typeof doc.defaultView.createEl === 'function'
+    ? doc.defaultView.createEl(tag)
+    : doc.createElement(tag);
   const prefix = `fm${++counter}`;
-  const wrap = doc.createElement('div');
+  const wrap = create('div');
   wrap.className = 'fm-wrap';
   // Parse as XML and import the nodes: no HTML parsing and no innerHTML. renderSvg output is well-formed XML.
   const parsed = new DOMParser().parseFromString(renderSvg(model, { idPrefix: prefix, theme: opts.theme ?? 'obsidian', transparent: (opts.theme ?? 'obsidian') === 'obsidian' }), 'image/svg+xml');
   if (parsed.getElementsByTagName('parsererror').length) throw new Error('FlowMotion: the diagram produced invalid SVG');
   wrap.replaceChildren(doc.importNode(parsed.documentElement, true));
   const svg = wrap.querySelector('svg') as SVGSVGElement;
-  if (model.backdrop && model.view?.paper === 'none') svg.style.colorScheme = doc.body.classList.contains('theme-dark') ? 'dark' : 'light'; // no sheet: draw.io colours follow Obsidian
+  if (model.backdrop && model.view?.paper === 'none') svg.classList.add(doc.body.classList.contains('theme-dark') ? 'fm-paper-dark' : 'fm-paper-light');
   container.appendChild(wrap);
-  if (model.view?.width) { wrap.style.width = model.view.width; wrap.classList.add('fm-capped'); }
+  if (model.view?.width) { wrap.style.setProperty('--fm-wrap-width', model.view.width); wrap.classList.add('fm-capped'); }
   const hv = opts.height ?? model.view?.height;
   type Mode = 'fit' | 'normal' | 'full';
   const inSlides = !!container.closest('.reveal'); // Obsidian Slides / Reveal.js: Normal may not fit a slide
   let mode = (inSlides ? 'fit' : model.view?.mode ?? 'fit') as Mode;
-  const modeSel = doc.createElement('select');
+  const modeSel = create('select');
   modeSel.className = 'fm-speed fm-mode'; modeSel.setAttribute('aria-label', 'Screen mode');
   for (const [v, l] of [['fit', 'Fit'], ['normal', 'Normal'], ['full', 'Full screen']] as const) {
     if (inSlides && v === 'normal') continue;
-    const o = doc.createElement('option'); o.value = v; o.textContent = l; modeSel.appendChild(o);
+    const o = create('option'); o.value = v; o.textContent = l; modeSel.appendChild(o);
   }
   // Reveal lays slides out in a fixed pixel box and scales it, so viewport units (vh) are wrong there:
   // fit the diagram to a share of the slide box instead, leaving room for a title or text around it.
@@ -74,8 +80,8 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   };
   const applyMode = (mm: Mode) => {
     mode = mm; modeSel.value = mm;
-    svg.style.maxHeight = mm === 'normal' ? 'none' : (fitHeight() ?? '');
-    svg.style.width = mm === 'normal' ? 'auto' : '';
+    svg.style.setProperty('--fm-diagram-max-height', mm === 'normal' ? 'none' : (fitHeight() ?? '75vh'));
+    svg.style.setProperty('--fm-diagram-width', mm === 'normal' ? 'auto' : '100%');
   };
   modeSel.addEventListener('change', () => {
     const want = modeSel.value as Mode;
@@ -89,7 +95,7 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   });
   let before: Mode = mode === 'full' ? 'fit' : mode;
   const onFs = () => {
-    if (doc.fullscreenElement === wrap) { if (mode !== 'full') before = mode; mode = 'full'; modeSel.value = 'full'; svg.style.maxHeight = ''; svg.style.width = ''; }
+    if (doc.fullscreenElement === wrap) { if (mode !== 'full') before = mode; mode = 'full'; modeSel.value = 'full'; }
     else if (mode === 'full') applyMode(before);
   };
   doc.addEventListener('fullscreenchange', onFs);
@@ -104,39 +110,38 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   };
   const player = new Player(svg, model, { speed: opts.speed, loop: opts.loop, onUpdate: sync });
 
-  const bar = doc.createElement('div');
+  const bar = create('div');
   bar.className = 'fm-controls';
-  const pb = doc.createElement('div'); // playback controls, toggled by the button below
+  const pb = create('div'); // playback controls, toggled by the button below
   pb.className = 'fm-pb';
-  playBtn = button(doc, 'Play', '▶', () => player.toggle());
-  scrub = doc.createElement('input');
+  playBtn = button(create, 'Play', '▶', () => player.toggle());
+  scrub = create('input');
   scrub.type = 'range'; scrub.className = 'fm-scrub'; scrub.min = '0'; scrub.max = String(Math.round(player.total)); scrub.value = '0';
   scrub.setAttribute('aria-label', 'Timeline');
   scrub.addEventListener('input', () => { player.pause(); player.seek(Number(scrub.value)); });
-  time = doc.createElement('span'); time.className = 'fm-time';
-  const speed = doc.createElement('select');
+  time = create('span'); time.className = 'fm-time';
+  const speed = create('select');
   speed.className = 'fm-speed'; speed.setAttribute('aria-label', 'Speed');
   for (const s of [0.25, 0.5, 1, 2, 4]) {
-    const o = doc.createElement('option'); o.value = String(s); o.textContent = `${s}×`;
+    const o = create('option'); o.value = String(s); o.textContent = `${s}×`;
     if (s === player.speed) o.selected = true;
     speed.appendChild(o);
   }
   speed.addEventListener('change', () => player.setSpeed(Number(speed.value)));
   pb.append(
     playBtn,
-    button(doc, 'Step back', '⏮', () => player.stepBack()),
-    button(doc, 'Step forward', '⏭', () => player.stepForward()),
-    button(doc, 'Reset', '⏹', () => player.reset()),
-    button(doc, 'Replay', '↻', () => player.replay()),
+    button(create, 'Step back', '⏮', () => player.stepBack()),
+    button(create, 'Step forward', '⏭', () => player.stepForward()),
+    button(create, 'Reset', '⏹', () => player.reset()),
+    button(create, 'Replay', '↻', () => player.replay()),
     scrub, time, speed,
   );
-  const toggle = button(doc, 'Show playback controls', '⚙', () => setControls(pb.hidden));
+  const toggle = button(create, 'Show playback controls', '⚙', () => setControls(pb.hidden));
   const setControls = (on: boolean) => {
     pb.hidden = !on;
     toggle.setAttribute('aria-pressed', String(on));
     toggle.setAttribute('aria-label', on ? 'Hide playback controls' : 'Show playback controls');
     toggle.title = toggle.getAttribute('aria-label')!;
-    toggle.style.opacity = on ? '1' : '0.7';
   };
   setControls(opts.controls === true);
   svg.classList.add('fm-clickable');
@@ -144,10 +149,10 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   // The toggle and screen mode are always visible, including in full screen.
   const parts: HTMLElement[] = [pb, toggle, modeSel];
   if (model.backdrop && opts.onPaper) {
-    const sel = doc.createElement('select');
+    const sel = create('select');
     sel.className = 'fm-speed fm-mode'; sel.setAttribute('aria-label', 'Drawing background');
     for (const [v, l] of [['default', 'Background: default'], ['light', 'Background: light'], ['dark', 'Background: dark'], ['none', 'Background: none (match theme)']] as const) {
-      const o = doc.createElement('option'); o.value = v; o.textContent = l; sel.appendChild(o);
+      const o = create('option'); o.value = v; o.textContent = l; sel.appendChild(o);
     }
     sel.value = ['light', 'dark', 'none'].includes(opts.paperChoice ?? '') ? opts.paperChoice! : 'default';
     sel.addEventListener('change', () => opts.onPaper!(sel.value));
