@@ -72,6 +72,7 @@ describe('settings page', () => {
 
   it('keeps an add-on off when its download fails', async () => {
     vi.mocked(installAddon).mockRejectedValueOnce(new Error('offline'));
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { tab, saves } = makeTab({ ...DEFAULTS });
     tab.display();
     const row = allSettings.find((x) => x.name === 'draw.io editor')!;
@@ -80,6 +81,8 @@ describe('settings page', () => {
     expect(saves.at(-1)).toMatchObject({ drawioEnabled: false });
     expect(row.toggle!.value).toBe(false);
     expect(notices.some((n) => n.includes('could not download') && n.includes('offline'))).toBe(true);
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
   });
 
   it('turning an add-on off deletes its files', async () => {
