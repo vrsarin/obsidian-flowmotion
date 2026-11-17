@@ -37,7 +37,7 @@ export class PluginSettingTab {
 export const allSettings: Setting[] = [];
 
 export class Setting {
-  settingEl: HTMLElement; private nameEl: HTMLElement; private descEl: HTMLElement; name = ''; toggle?: ToggleComponent;
+  settingEl: HTMLElement; private nameEl: HTMLElement; descEl: HTMLElement; name = ''; toggle?: ToggleComponent;
   constructor(container: HTMLElement) {
     allSettings.push(this);
     this.settingEl = container.createEl('div');

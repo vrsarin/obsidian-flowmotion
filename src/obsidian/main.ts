@@ -322,10 +322,10 @@ export class FlowMotionSettings extends PluginSettingTab {
           await this.setControlValue(o.key, v);
           if (v && !(await addonStatus(this.app, this.plugin.pluginDir))[o.ready]) new Notice(`FlowMotion: the ${o.name} add-on is not installed. Download it from ${ADDON_URL}.`);
         }));
-        // A failed file check must not break the settings page: show the status as unknown instead.
+        // Updating the description asynchronously via setDesc can hang Obsidian's settings page.
         addonStatus(this.app, this.plugin.pluginDir)
-          .then((st) => setting.setDesc(`${o.desc} Status: ${st[o.ready] ? 'installed' : 'not installed'}.`))
-          .catch((e) => { console.error('FlowMotion: could not check add-on files', e); setting.setDesc(`${o.desc} Status: unknown.`); });
+          .then((st) => { setting.descEl.textContent = `${o.desc} Status: ${st[o.ready] ? 'installed' : 'not installed'}.`; })
+          .catch((e) => { console.error('FlowMotion: could not check add-on files', e); setting.descEl.textContent = `${o.desc} Status: unknown.`; });
       },
     };
   }

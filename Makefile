@@ -59,7 +59,7 @@ release-build:
 release-check:
 	node scripts/check-release.mjs "$(or $(TAG),$(shell node -p "require('./manifest.json').version"))"
 
-install-plugin:
+install-plugin: release-build
 	@test -n "$(VAULT)" || { echo "Set VAULT=\"/path/to/vault\""; exit 2; }
 	$(NPM) run install-plugin -- "$(VAULT)"
 
