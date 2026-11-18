@@ -1,5 +1,6 @@
 import * as https from 'https';
 import * as zlib from 'zlib';
+import * as tar from 'tar-stream';
 import type { DataAdapter } from 'obsidian';
 import type { AddonSpec } from './addons';
 import { unzip } from './zip';
@@ -47,6 +48,69 @@ async function text(url: string): Promise<string> {
   return (await download(url, MAX_METADATA_BYTES)).toString('utf8');
 }
 
+function untar(
+  archive: Uint8Array,
+  select: (path: string) => boolean,
+  onFile: (path: string, data: Uint8Array) => Promise<void>,
+): Promise<void> {
+  const extract = tar.extract();
+  let total = 0;
+  return new Promise((resolve, reject) => {
+    extract.on('entry', (header, stream, next) => {
+      if (header.type !== 'file' || !select(header.name)) {
+        stream.resume();
+        stream.once('end', () => next());
+        return;
+      }
+      if (header.size < 0 || header.size > MAX_ENTRY_BYTES) {
+        next(new Error(`archive entry exceeds the ${MAX_ENTRY_BYTES}-byte limit: ${header.name}`));
+        return;
+      }
+      if (header.size > MAX_TOTAL_EXTRACTED_BYTES - total) {
+        next(new Error(`archive contents exceed the ${MAX_TOTAL_EXTRACTED_BYTES}-byte limit`));
+        return;
+      }
+      total += header.size;
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let invalidSize = false;
+      stream.on('data', (value: unknown) => {
+        if (!(value instanceof Uint8Array)) {
+          stream.destroy(new Error(`archive entry has invalid data: ${header.name}`));
+          return;
+        }
+        const chunk = value;
+        size += chunk.byteLength;
+        if (size > header.size && !invalidSize) {
+          invalidSize = true;
+          stream.destroy(new Error(`archive entry has an invalid size: ${header.name}`));
+        } else {
+          chunks.push(Buffer.from(chunk));
+        }
+      });
+      stream.once('end', () => {
+        if (invalidSize) return;
+        if (size !== header.size) {
+          next(new Error(`archive entry has an invalid size: ${header.name}`));
+          return;
+        }
+        void onFile(header.name, Buffer.concat(chunks, size)).then(
+          () => next(),
+          (error: unknown) => next(error instanceof Error ? error : new Error(String(error))),
+        );
+      });
+      stream.once('error', (error: Error) => next(error));
+    });
+    extract.once('finish', resolve);
+    extract.once('error', reject);
+    try {
+      extract.end(zlib.gunzipSync(archive, { maxOutputLength: MAX_TOTAL_EXTRACTED_BYTES }));
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+}
+
 const active = new Set<string>();
 
 async function removeDirectory(adapter: AddonStorage, path: string): Promise<void> {
@@ -61,15 +125,14 @@ async function ensureDirectory(adapter: AddonStorage, path: string): Promise<voi
 }
 
 /** Downloads the add-on into the vault-relative plugin directory. */
-export async function installAddon(spec: AddonSpec, adapter: AddonStorage, pluginDir: string): Promise<void> {
+export async function installAddon(spec: AddonSpec, adapter: AddonStorage, pluginDir: string, version?: string): Promise<void> {
   if (active.has(spec.dir)) throw new Error('this add-on is already being installed');
   active.add(spec.dir);
   const dest = `${pluginDir}/${spec.dir}`, tmp = `${dest}.installing`;
   try {
     await removeDirectory(adapter, tmp);
     await ensureDirectory(adapter, tmp);
-    const source = await spec.resolve(text);
-    const res = await get(source.url);
+    const source = await spec.resolve(text, version);
     const map = new Map<string, string>();
     let files = 0;
     const save = async (rel: string, data: Uint8Array) => {
@@ -80,18 +143,26 @@ export async function installAddon(spec: AddonSpec, adapter: AddonStorage, plugi
     };
     const select = (p: string) => { const t = spec.target(p); if (t !== null) map.set(p, t); return t !== null; };
     const onFile = async (p: string, data: Uint8Array) => { await save(map.get(p)!, data); map.delete(p); files++; };
-    const parts: Buffer[] = [];
-    let archiveBytes = 0;
-    for await (const c of res) {
-      const chunk = c as Buffer;
-      archiveBytes += chunk.length;
-      if (archiveBytes > MAX_ARCHIVE_BYTES) throw new Error(`add-on archive exceeds the ${MAX_ARCHIVE_BYTES}-byte limit`);
-      parts.push(chunk);
+    if (source.archive === 'tar.gz') {
+      await untar(await download(source.url, MAX_ARCHIVE_BYTES), select, onFile);
+    } else if (spec.file) {
+      await save(spec.file, await download(source.url, MAX_ARCHIVE_BYTES));
+      files++;
+    } else {
+      const res = await get(source.url);
+      const parts: Buffer[] = [];
+      let archiveBytes = 0;
+      for await (const c of res) {
+        const chunk = c as Buffer;
+        archiveBytes += chunk.length;
+        if (archiveBytes > MAX_ARCHIVE_BYTES) throw new Error(`add-on archive exceeds the ${MAX_ARCHIVE_BYTES}-byte limit`);
+        parts.push(chunk);
+      }
+      await unzip(Buffer.concat(parts, archiveBytes), select, onFile, (d, maxOutputBytes) => zlib.inflateRawSync(d, { maxOutputLength: maxOutputBytes }), {
+        maxEntryBytes: MAX_ENTRY_BYTES,
+        maxTotalBytes: MAX_TOTAL_EXTRACTED_BYTES,
+      });
     }
-    await unzip(Buffer.concat(parts, archiveBytes), select, onFile, (d, maxOutputBytes) => zlib.inflateRawSync(d, { maxOutputLength: maxOutputBytes }), {
-      maxEntryBytes: MAX_ENTRY_BYTES,
-      maxTotalBytes: MAX_TOTAL_EXTRACTED_BYTES,
-    });
     for (const x of source.extras ?? []) await save(x.name, Buffer.from(await text(x.url)));
     if (!(await adapter.exists(`${tmp}/${spec.marker}`)) || files === 0) throw new Error('the download did not contain the expected files');
     await adapter.write(`${tmp}/VERSION`, `${source.label}\n`);

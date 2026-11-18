@@ -176,7 +176,12 @@ export function mount(host: HTMLElement, opts: MountOptions): Handle {
   const theme = `fm-${opts.dark ? 'dark' : 'light'}`;
   mo.editor.defineTheme(theme, {
     base: opts.dark ? 'vs-dark' : 'vs', inherit: true, rules: [],
-    colors: { 'editor.background': c.bg, 'editor.foreground': c.fg, 'editorLineNumber.foreground': c.muted, 'editorGutter.background': c.bg, 'editorWidget.background': c.bg, 'editorWidget.border': c.border, 'editor.lineHighlightBackground': opts.dark ? '#ffffff0d' : '#0000000a' },
+    colors: {
+      'editor.background': c.bg, 'editor.foreground': c.fg, 'editorLineNumber.foreground': c.muted,
+      'editorGutter.background': c.bg, 'editorWidget.background': c.bg, 'editorWidget.border': c.border,
+      'editor.lineHighlightBackground': opts.dark ? '#ffffff0d' : '#0000000a',
+      'menu.background': c.bg, 'menu.foreground': c.fg, 'menu.border': c.border,
+    },
   });
   const model = mo.editor.createModel(opts.value, LANG, mo.Uri.parse(`inmemory://flowmotion/${++seq}.yaml`));
   fileExistsFor.set(model, opts.fileExists);
@@ -184,7 +189,8 @@ export function mount(host: HTMLElement, opts: MountOptions): Handle {
     model, theme, automaticLayout: true, minimap: { enabled: false }, scrollBeyondLastLine: false, tabSize: 2, insertSpaces: true,
     fontFamily: c.font, fontSize: 13, lineNumbersMinChars: 3, glyphMargin: true, folding: true, renderLineHighlight: 'line',
     quickSuggestions: { other: true, strings: true, comments: false }, wordBasedSuggestions: 'off', suggestOnTriggerCharacters: true,
-    links: false, fixedOverflowWidgets: true, padding: { top: 8 }, smoothScrolling: true, bracketPairColorization: { enabled: true },
+    // Keep the context menu under the editor so its shadow root inherits Monaco's theme colors.
+    links: false, fixedOverflowWidgets: false, padding: { top: 8 }, smoothScrolling: true, bracketPairColorization: { enabled: true },
   });
   let timer = 0;
   const sub = model.onDidChangeContent(() => {

@@ -1,46 +1,125 @@
-import { Platform } from 'obsidian';
-import * as glue from '../monaco/entry';
-import type { Handle, MountOptions } from '../monaco/entry';
+import { Platform } from "obsidian";
+import type { DataAdapter } from "obsidian";
+import type * as monaco from "monaco-editor/editor/editor.api";
+import { init, mount, purge, type YamlDefinition } from "../monaco/entry";
+import type { StaticServer } from "./static-server";
+import { MONACO_YAML_MODULE } from "./addons";
 
-export interface MonacoApi { mount(host: HTMLElement, opts: MountOptions): Handle; purge(): void }
+export interface MonacoApi {
+  mount(
+    host: HTMLElement,
+    opts: import("../monaco/entry").MountOptions,
+  ): import("../monaco/entry").Handle;
+  purge(): void;
+}
+
+type MonacoNamespace = typeof monaco;
+type MonacoRequire = {
+  (
+    modules: string[],
+    callback: (api: MonacoNamespace, yaml: YamlDefinition) => void,
+    onError?: (error: Error) => void,
+  ): void;
+  config(options: { paths: { vs: string }; preferScriptTags: boolean }): void;
+};
+type MonacoWindow = Window & { require?: MonacoRequire };
 
 /**
- * Loads Monaco on first use. Monaco is bundled into main.js, but its modules are split off with dynamic import()
- * so they are only evaluated when a code editor opens. Desktop only: on mobile the plain text editor is used.
- * Browsers cannot unload modules, so after the first open the code stays in memory until Obsidian restarts or the plugin is reloaded.
+ * Loads Monaco's optional AMD distribution from the npm package on first use.
+ * Desktop only: on mobile the CodeMirror editor is used.
  */
 export class MonacoLoader {
   private api?: MonacoApi;
   private loading?: Promise<MonacoApi>;
   private refs = 0;
 
+  constructor(
+    private server: Pick<StaticServer, "url">,
+    private adapter: Pick<DataAdapter, "exists">,
+    private pluginDir: string,
+  ) {}
+
   async acquire(): Promise<MonacoApi> {
     this.refs++;
-    try { return await (this.loading ??= this.load()); }
-    catch (e) { this.refs--; this.loading = undefined; throw e; }
+    try {
+      return await (this.loading ??= this.load());
+    } catch (e) {
+      this.refs--;
+      this.loading = undefined;
+      throw e;
+    }
   }
 
-  release() { if (this.refs > 0 && --this.refs === 0) this.cleanup(); }
+  release() {
+    if (this.refs > 0 && --this.refs === 0) this.cleanup();
+  }
 
   /** True when this device can run the code editor. */
-  installed(): Promise<boolean> { return Promise.resolve(Platform.isDesktopApp); }
+  async installed(): Promise<boolean> {
+    return (
+      Platform.isDesktopApp &&
+      this.adapter.exists(`${this.pluginDir}/monaco/min/vs/loader.js`)
+    );
+  }
 
   private async load(): Promise<MonacoApi> {
-    if (!Platform.isDesktopApp) throw new Error('the code editor works on the desktop app only');
-    const [monaco, yaml] = await Promise.all([import('monaco-editor/editor/editor.main'), import('monaco-editor/languages/definitions/yaml/yaml')]);
-    glue.init(monaco, yaml);
-    this.api = glue;
-    return glue;
+    if (!Platform.isDesktopApp)
+      throw new Error("the code editor works on the desktop app only");
+    const url = await this.server.url();
+    const amdWindow = activeWindow as MonacoWindow;
+    if (!amdWindow.require?.config) {
+      const script = activeDocument.createElement("script");
+      script.src = `${url}/min/vs/loader.js`;
+      try {
+        await new Promise<void>((resolve, reject) => {
+          script.onload = () => resolve();
+          script.onerror = () =>
+            reject(new Error("the Monaco AMD loader script could not be loaded"));
+          activeDocument.head.appendChild(script);
+        });
+      } catch (e) {
+        script.remove();
+        throw e;
+      }
+    }
+
+    const amdRequire = (activeWindow as MonacoWindow).require;
+    if (!amdRequire?.config)
+      throw new Error("the Monaco AMD loader did not initialize");
+    amdRequire.config({
+      paths: { vs: `${url}/min/vs` },
+      preferScriptTags: true,
+    });
+    const [api, yaml] = await new Promise<[MonacoNamespace, YamlDefinition]>(
+      (resolve, reject) => {
+        amdRequire(
+          ["vs/editor/editor.main", MONACO_YAML_MODULE],
+          (monacoApi, yamlDefinition) => resolve([monacoApi, yamlDefinition]),
+          reject,
+        );
+      },
+    );
+    init(api, yaml);
+    this.api = { mount, purge };
+    return this.api;
   }
 
   private cleanup() {
-    try { this.api?.purge(); } catch { /* best effort */ }
-    this.loading = undefined;
+    this.api?.purge();
     this.api = undefined;
+    this.loading = undefined;
+    // Monaco's AMD modules and global loader stay available for later use.
     // Widgets Monaco attaches to <body> (menus, hovers, aria live regions).
-    activeDocument.body.querySelectorAll(':scope > .monaco-aria-container, :scope > .context-view, :scope > .monaco-menu-container, :scope > .shadow-root-host, :scope > .monaco-hover').forEach((n) => n.remove());
+    activeDocument.body
+      .querySelectorAll(
+        ":scope > .monaco-aria-container, :scope > .context-view, :scope > .monaco-menu-container, :scope > .shadow-root-host, :scope > .monaco-hover",
+      )
+      .forEach((n) => n.remove());
   }
 
   /** For plugin unload. */
-  dispose() { this.refs = 0; this.cleanup(); activeDocument.head.querySelectorAll('style[data-flowmotion-monaco]').forEach((n) => n.remove()); }
+  dispose() {
+    this.refs = 0;
+    this.cleanup();
+  }
 }

@@ -1,7 +1,7 @@
 import { Modal, Notice, Setting } from 'obsidian';
 import { EditorPane, type PaneOptions } from './editor-pane';
 
-/** Edit a diagram in a large dialog with Monaco; the editor is freed when the dialog closes. */
+/** Edit a diagram in a large dialog; the editor is freed when the dialog closes. */
 export class EditModal extends Modal {
   private pane?: EditorPane;
   private dirty = false;

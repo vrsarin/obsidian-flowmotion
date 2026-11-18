@@ -3,66 +3,66 @@ name: Release Obsidian plugin
 # Push a plain version tag, for example: git tag 0.1.0 && git push origin 0.1.0
 # The tag must equal manifest.json "version" (no "v" prefix). scripts/check-release.mjs enforces this.
 on:
-    push:
-        tags:
-            - "*.*.*"
+  push:
+    tags:
+      - "*.*.*"
 
 jobs:
-    build:
-        runs-on: ubuntu-latest
-        permissions:
-            contents: write
-            id-token: write
-            attestations: write
-        steps:
-            - uses: actions/checkout@v7
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
 
-            - name: Use Node.js
-              uses: actions/setup-node@v7
-              with:
-                  node-version: 24
-                  cache: "npm"
+      - name: Use Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: "npm"
 
-            - name: Install
-              run: npm ci
+      - name: Install
+        run: npm ci
 
-            - name: Lint and test
-              run: |
-                  npm run lint
-                  npm test
+      - name: Lint and test
+        run: |
+          npm run lint
+          npm test
 
-            - name: Build plugin
-              run: npm run build
+      - name: Build plugin
+        run: npm run build
 
-            - name: Check release matches manifest
-              # gh act has no real tag, so this check runs only on a real tag push.
-              if: ${{ !env.ACT }}
-              run: node scripts/check-release.mjs "$GITHUB_REF_NAME"
+      - name: Check release matches manifest
+        # gh act has no real tag, so this check runs only on a real tag push.
+        if: ${{ !env.ACT }}
+        run: node scripts/check-release.mjs "$GITHUB_REF_NAME"
 
-            - name: Attest build provenance
-              # actions/attest needs a real GitHub OIDC token, which gh act does not provide.
-              if: ${{ !env.ACT }}
-              uses: actions/attest@v4
-              with:
-                  subject-path: |
-                      dist/plugin/main.js
-                      dist/plugin/manifest.json
-                      dist/plugin/styles.css
+      - name: Attest build provenance
+        # actions/attest needs a real GitHub OIDC token, which gh act does not provide.
+        if: ${{ !env.ACT }}
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            dist/plugin/main.js
+            dist/plugin/manifest.json
+            dist/plugin/styles.css
 
-            - name: Publish release
-              # Published (not draft): the Obsidian community catalog only lists published releases.
-              if: ${{ !env.ACT }}
-              env:
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-              run: |
-                  if gh release view "$GITHUB_REF_NAME" >/dev/null; then
-                    gh release upload "$GITHUB_REF_NAME" \
-                      dist/plugin/main.js dist/plugin/manifest.json dist/plugin/styles.css
-                    gh release edit "$GITHUB_REF_NAME" --draft=false
-                  else
-                    gh release create "$GITHUB_REF_NAME" \
-                      --title="$GITHUB_REF_NAME" \
-                      --verify-tag \
-                      --notes-file CHANGELOG.md \
-                      dist/plugin/main.js dist/plugin/manifest.json dist/plugin/styles.css
-                  fi
+      - name: Publish release
+        # Published (not draft): the Obsidian community catalog only lists published releases.
+        if: ${{ !env.ACT }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null; then
+            gh release upload "$GITHUB_REF_NAME" \
+              dist/plugin/main.js dist/plugin/manifest.json dist/plugin/styles.css
+            gh release edit "$GITHUB_REF_NAME" --draft=false
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title="$GITHUB_REF_NAME" \
+              --verify-tag \
+              --notes-file CHANGELOG.md \
+              dist/plugin/main.js dist/plugin/manifest.json dist/plugin/styles.css
+          fi

@@ -70,16 +70,16 @@ To edit a diagram with help (autocomplete, error checks, and a live preview), ho
 
 ## What you can draw
 
-| Diagram | Use it for |
-| --- | --- |
-| Flowchart | Systems, processes, decisions |
-| Sequence | Who talks to whom, and in what order |
-| Activity | Step-by-step business workflows |
-| State | Things that move between states |
-| Mind map | Ideas and plans |
-| Gantt | Project timelines |
-| C4 and architecture | Software and cloud landscapes |
-| Class and ER | Data models |
+| Diagram             | Use it for                           |
+| ------------------- | ------------------------------------ |
+| Flowchart           | Systems, processes, decisions        |
+| Sequence            | Who talks to whom, and in what order |
+| Activity            | Step-by-step business workflows      |
+| State               | Things that move between states      |
+| Mind map            | Ideas and plans                      |
+| Gantt               | Project timelines                    |
+| C4 and architecture | Software and cloud landscapes        |
+| Class and ER        | Data models                          |
 
 Full syntax: [Writing diagrams](https://github.com/vrsarin/obsidian-flowmotion/wiki/Writing-Diagrams).
 
@@ -88,9 +88,9 @@ Full syntax: [Writing diagrams](https://github.com/vrsarin/obsidian-flowmotion/w
 FlowMotion works out of the box. The optional draw.io editor is downloaded from its upstream project when you turn it on, and is not part of FlowMotion releases:
 
 - **draw.io editor** for `.drawio.flow` files, downloaded as the current `draw.war` from the [draw.io GitHub releases](https://github.com/jgraph/drawio/releases) (about 42 MB installed).
-To use it, open FlowMotion settings and turn it on. FlowMotion downloads it into the plugin folder (a network connection is needed once). Turn it off to delete the files. It works on the desktop app only.
+  To use it, open FlowMotion settings and turn it on. FlowMotion downloads it into the plugin folder (a network connection is needed once). Turn it off to delete the files. It works on the desktop app only.
 
-The **Code editor** setting (Monaco, with syntax help for diagram code) needs no download: Monaco is built into `main.js`. On mobile, or when the setting is off, FlowMotion uses a plain text box. draw.io and Monaco are licensed under Apache-2.0 and MIT; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+FlowMotion uses Obsidian's CodeMirror editor by default, with a live preview. For richer editing, enable **Rich Code Editor (Monaco)** in settings; it downloads the pinned Monaco Editor npm package only when you turn it on. The default editor works offline and on mobile. draw.io and Monaco are licensed under Apache-2.0 and MIT; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Data access
 
