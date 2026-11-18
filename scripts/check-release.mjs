@@ -4,7 +4,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-/** Files published with the release. Monaco is downloaded separately from npm when enabled. */
+/** Files published with the release. Monaco is bundled into main.js. */
 export const RELEASE_FILES = [
   "dist/plugin/main.js",
   "dist/plugin/manifest.json",
