@@ -19,6 +19,9 @@ on:
   schedule:
     - cron: "27 0 * * 3"
 
+permissions:
+  contents: read
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
@@ -31,13 +34,12 @@ jobs:
     permissions:
       # required for all workflows
       security-events: write
+      contents: read
 
       # required to fetch internal or private CodeQL packs
       packages: read
 
       # only required for workflows in private repositories
-      actions: read
-      contents: read
 
     strategy:
       fail-fast: false
@@ -47,7 +49,7 @@ jobs:
             build-mode: none
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # Add any setup steps before running the `github/codeql-action/init` action.
       # This includes steps like installing compilers or runtimes (`actions/setup-node`
@@ -57,7 +59,7 @@ jobs:
 
       # Initializes the CodeQL tools for scanning.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@5895b2c9be147bc7f1c75ce72c5cb577febb1907 # v4
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
@@ -86,6 +88,6 @@ jobs:
           exit 1
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@5895b2c9be147bc7f1c75ce72c5cb577febb1907 # v4
         with:
           category: "/language:${{matrix.language}}"
