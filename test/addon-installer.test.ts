@@ -197,7 +197,9 @@ describe("add-on installation through the vault adapter", () => {
     const { adapter, files, dirs } = storage();
     const root = ".obsidian/plugins/flowmotion";
 
-    await expect(installAddon(MONACO, adapter, root)).rejects.toThrow("Unexpected end of data");
+    await expect(installAddon(MONACO, adapter, root)).rejects.toThrow(
+      /truncated add-on archive entry/,
+    );
     expect(dirs.has(`${root}/monaco.installing`)).toBe(false);
     expect(files.size).toBe(0);
   });

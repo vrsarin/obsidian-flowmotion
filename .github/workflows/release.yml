@@ -34,6 +34,12 @@ jobs:
       - name: Build plugin
         run: npm run build
 
+      - name: Verify reproducible main.js
+        run: |
+          cp dist/plugin/main.js /tmp/flowmotion-main.js
+          npm run build
+          cmp /tmp/flowmotion-main.js dist/plugin/main.js
+
       - name: Check release matches manifest
         # gh act has no real tag, so this check runs only on a real tag push.
         if: ${{ !env.ACT }}

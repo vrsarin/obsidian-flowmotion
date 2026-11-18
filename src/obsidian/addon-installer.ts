@@ -1,6 +1,5 @@
 import * as https from 'https';
 import * as zlib from 'zlib';
-import * as tar from 'tar-stream';
 import type { DataAdapter } from 'obsidian';
 import type { AddonSpec } from './addons';
 import { unzip } from './zip';
@@ -48,69 +47,108 @@ async function text(url: string): Promise<string> {
   return (await download(url, MAX_METADATA_BYTES)).toString('utf8');
 }
 
-function untar(
+async function untar(
   archive: Uint8Array,
   select: (path: string) => boolean,
   onFile: (path: string, data: Uint8Array) => Promise<void>,
 ): Promise<void> {
-  const extract = tar.extract();
-  let total = 0;
-  return new Promise((resolve, reject) => {
-    extract.on('entry', (header, stream, next) => {
-      stream.once('error', (error: Error) => {
-        if (!extract.destroyed) next(error);
-      });
-      if (header.type !== 'file' || !select(header.name)) {
-        stream.resume();
-        stream.once('end', () => next());
-        return;
-      }
-      if (header.size < 0 || header.size > MAX_ENTRY_BYTES) {
-        next(new Error(`archive entry exceeds the ${MAX_ENTRY_BYTES}-byte limit: ${header.name}`));
-        return;
-      }
-      if (header.size > MAX_TOTAL_EXTRACTED_BYTES - total) {
-        next(new Error(`archive contents exceed the ${MAX_TOTAL_EXTRACTED_BYTES}-byte limit`));
-        return;
-      }
-      total += header.size;
-      const chunks: Buffer[] = [];
-      let size = 0;
-      let invalidSize = false;
-      stream.on('data', (value: unknown) => {
-        if (!(value instanceof Uint8Array)) {
-          stream.destroy(new Error(`archive entry has invalid data: ${header.name}`));
-          return;
-        }
-        const chunk = value;
-        size += chunk.byteLength;
-        if (size > header.size && !invalidSize) {
-          invalidSize = true;
-          stream.destroy(new Error(`archive entry has an invalid size: ${header.name}`));
-        } else {
-          chunks.push(Buffer.from(chunk));
-        }
-      });
-      stream.once('end', () => {
-        if (invalidSize) return;
-        if (size !== header.size) {
-          next(new Error(`archive entry has an invalid size: ${header.name}`));
-          return;
-        }
-        void onFile(header.name, Buffer.concat(chunks, size)).then(
-          () => next(),
-          (error: unknown) => next(error instanceof Error ? error : new Error(String(error))),
-        );
-      });
-    });
-    extract.once('finish', resolve);
-    extract.once('error', reject);
-    try {
-      extract.end(zlib.gunzipSync(archive, { maxOutputLength: MAX_TOTAL_EXTRACTED_BYTES }));
-    } catch (error) {
-      reject(error instanceof Error ? error : new Error(String(error)));
+  let tarBytes: Buffer;
+  try {
+    tarBytes = zlib.gunzipSync(archive, { maxOutputLength: MAX_TOTAL_EXTRACTED_BYTES });
+  } catch (error) {
+    return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+  }
+
+  // npm tarballs use POSIX tar. Parse the small subset needed here directly so
+  // archive extraction stays in memory and all writes continue through Obsidian.
+  const decoder = new TextDecoder();
+  const field = (block: Buffer, start: number, length: number) => {
+    const end = block.indexOf(0, start);
+    return decoder.decode(block.subarray(start, end < 0 || end >= start + length ? start + length : end));
+  };
+  const octal = (block: Buffer, start: number, length: number, label: string): number => {
+    const value = field(block, start, length).trim().replace(/\0.*$/, '');
+    if (!value) return 0;
+    if (!/^[0-7]+$/.test(value)) throw new Error(`invalid ${label} in add-on archive`);
+    const parsed = Number.parseInt(value, 8);
+    if (!Number.isSafeInteger(parsed)) throw new Error(`invalid ${label} in add-on archive`);
+    return parsed;
+  };
+  const paxValues = (data: Buffer): Record<string, string> => {
+    const values: Record<string, string> = {};
+    let offset = 0;
+    while (offset < data.length) {
+      const space = data.indexOf(0x20, offset);
+      if (space < 0) throw new Error('invalid PAX header in add-on archive');
+      const recordLength = Number.parseInt(data.toString('ascii', offset, space), 10);
+      if (!Number.isSafeInteger(recordLength) || recordLength <= space - offset + 1 || offset + recordLength > data.length)
+        throw new Error('invalid PAX header in add-on archive');
+      const record = decoder.decode(data.subarray(space + 1, offset + recordLength - 1));
+      const equals = record.indexOf('=');
+      if (equals > 0) values[record.slice(0, equals)] = record.slice(equals + 1);
+      offset += recordLength;
     }
-  });
+    return values;
+  };
+
+  let offset = 0;
+  let total = 0;
+  let longName: string | undefined;
+  let localPax: Record<string, string> = {};
+  const globalPax: Record<string, string> = {};
+  while (offset + 512 <= tarBytes.length) {
+    const header = tarBytes.subarray(offset, offset + 512);
+    if (header.every((byte) => byte === 0)) break;
+    const expectedChecksum = octal(header, 148, 8, 'header checksum');
+    let checksum = 0;
+    for (let i = 0; i < 512; i++) checksum += i >= 148 && i < 156 ? 32 : header[i]!;
+    if (checksum !== expectedChecksum) throw new Error('invalid header checksum in add-on archive');
+
+    const headerName = field(header, 0, 100);
+    const prefix = field(header, 345, 155);
+    const name = longName ?? (prefix ? `${prefix}/${headerName}` : headerName);
+    const type = header[156] === 0 ? '0' : String.fromCharCode(header[156]!);
+    const headerSize = octal(header, 124, 12, 'entry size');
+    const dataStart = offset + 512;
+    const dataEnd = dataStart + headerSize;
+    const paddedEnd = dataStart + Math.ceil(headerSize / 512) * 512;
+    if (dataEnd > tarBytes.length || paddedEnd > tarBytes.length) throw new Error(`truncated add-on archive entry: ${name}`);
+    const data = tarBytes.subarray(dataStart, dataEnd);
+
+    if (type === 'L') {
+      longName = decoder.decode(data).replace(/[\0\n]+$/, '');
+    } else if (type === 'x' || type === 'g') {
+      const values = paxValues(data);
+      if (type === 'g') Object.assign(globalPax, values);
+      else localPax = values;
+    } else {
+      const attrs = { ...globalPax, ...localPax };
+      const entryName = attrs.path ?? name;
+      const size = attrs.size === undefined ? headerSize : Number(attrs.size);
+      if (!Number.isSafeInteger(size) || size < 0)
+        throw new Error(`invalid entry size in add-on archive: ${entryName}`);
+      const entryEnd = dataStart + size;
+      const entryPaddedEnd = dataStart + Math.ceil(size / 512) * 512;
+      if (entryEnd > tarBytes.length || entryPaddedEnd > tarBytes.length)
+        throw new Error(`truncated add-on archive entry: ${entryName}`);
+      const isFile = type === '0' || type === '\0';
+      if (isFile && select(entryName)) {
+        if (size > MAX_ENTRY_BYTES)
+          throw new Error(`archive entry exceeds the ${MAX_ENTRY_BYTES}-byte limit: ${entryName}`);
+        if (size > MAX_TOTAL_EXTRACTED_BYTES - total)
+          throw new Error(`archive contents exceed the ${MAX_TOTAL_EXTRACTED_BYTES}-byte limit`);
+        total += size;
+        await onFile(entryName, tarBytes.subarray(dataStart, entryEnd));
+      }
+      longName = undefined;
+      localPax = {};
+      offset = entryPaddedEnd;
+      continue;
+    }
+    offset = paddedEnd;
+  }
+  if (offset + 512 > tarBytes.length && offset !== tarBytes.length)
+    throw new Error('truncated add-on archive header');
 }
 
 const active = new Set<string>();
