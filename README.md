@@ -70,16 +70,16 @@ To edit a diagram with help (autocomplete, error checks, and a live preview), ho
 
 ## What you can draw
 
-| Diagram | Use it for |
-| --- | --- |
-| Flowchart | Systems, processes, decisions |
-| Sequence | Who talks to whom, and in what order |
-| Activity | Step-by-step business workflows |
-| State | Things that move between states |
-| Mind map | Ideas and plans |
-| Gantt | Project timelines |
-| C4 and architecture | Software and cloud landscapes |
-| Class and ER | Data models |
+| Diagram             | Use it for                           |
+| ------------------- | ------------------------------------ |
+| Flowchart           | Systems, processes, decisions        |
+| Sequence            | Who talks to whom, and in what order |
+| Activity            | Step-by-step business workflows      |
+| State               | Things that move between states      |
+| Mind map            | Ideas and plans                      |
+| Gantt               | Project timelines                    |
+| C4 and architecture | Software and cloud landscapes        |
+| Class and ER        | Data models                          |
 
 Full syntax: [Writing diagrams](https://github.com/vrsarin/obsidian-flowmotion/wiki/Writing-Diagrams).
 
@@ -88,14 +88,16 @@ Full syntax: [Writing diagrams](https://github.com/vrsarin/obsidian-flowmotion/w
 FlowMotion works out of the box. The optional draw.io editor is downloaded from its upstream project when you turn it on, and is not part of FlowMotion releases:
 
 - **draw.io editor** for `.drawio.flow` files, downloaded as the current `draw.war` from the [draw.io GitHub releases](https://github.com/jgraph/drawio/releases) (about 42 MB installed).
-To use it, open FlowMotion settings and turn it on. FlowMotion downloads it into the plugin folder (a network connection is needed once). Turn it off to delete the files. It works on the desktop app only.
+  To use it, open FlowMotion settings and turn it on. FlowMotion downloads it into the plugin folder (a network connection is needed once). Turn it off to delete the files. It works on the desktop app only.
 
-The **Code editor** setting (Monaco, with syntax help for diagram code) needs no download: Monaco is built into `main.js`. On mobile, or when the setting is off, FlowMotion uses a plain text box. draw.io and Monaco are licensed under Apache-2.0 and MIT; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+FlowMotion uses CodeMirror for `.flow` files and the diagram edit window. It includes YAML syntax highlighting, line numbers, a live preview, and formatting with **Shift+Alt+F**. It works offline and on mobile without an add-on.
+
+On desktop, enable **Settings → FlowMotion → Rich Code Editor (Monaco)** for completion, hover help, and navigation. The first enable downloads the pinned package published by the [Monaco Editor project](https://github.com/microsoft/monaco-editor) to npm. Reopen the diagram after installation. Monaco works offline after installation. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for licenses.
 
 ## Data access
 
-- The diagram picker lists vault folders and `.flow` files. Path completion searches vault file names for `.flow`, YAML, and JSON files.
-- The optional Monaco code editor includes clipboard support for editing and clipboard-aware suggestions. FlowMotion does not call the clipboard API directly.
+- Opening the diagram picker enumerates `.flow` files; it enumerates vault folders when showing the new-file destination list. Filtering the picker uses that opening-time file list. Path completion searches vault file names for `.flow`, YAML, and JSON files only when completing a `src:` path.
+- The optional Monaco add-on includes clipboard support for editing and clipboard-aware suggestions. FlowMotion does not call the clipboard API directly.
 - The optional draw.io editor is downloaded into the plugin folder through the vault adapter. A local server bound to `127.0.0.1` serves those files to the editor.
 
 ## Advanced
@@ -104,7 +106,7 @@ See the wiki for [reusing diagram files](https://github.com/vrsarin/obsidian-flo
 
 ## Status
 
-FlowMotion is version 0.1.0. Automated tests cover the drawing engine and selected Obsidian desktop workflows, including loading, SVG rendering, settings, and restart persistence. Mobile use and full optional-editor workflows still need manual checks. Test it in a copy of your vault first. See [Known limitations](https://github.com/vrsarin/obsidian-flowmotion/wiki/Known-Limitations).
+See [CHANGELOG.md](CHANGELOG.md) for version history. Automated tests cover the drawing engine and selected Obsidian desktop workflows, including loading, SVG rendering, settings, and restart persistence. Mobile use and full optional-editor workflows still need manual checks. Test it in a copy of your vault first. See [Known limitations](https://github.com/vrsarin/obsidian-flowmotion/wiki/Known-Limitations).
 
 ## Contributing
 

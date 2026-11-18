@@ -38,12 +38,12 @@ describe('browser runtime', () => {
     mounted.destroy();
   });
 
-  it('uses Obsidian DOM helpers when available', async () => {
+  it('uses the supplied Obsidian element factory when available', async () => {
     const model = await buildModel('nodes: [{ id: a }]');
+    const container = document.createElement('div');
     const spy = vi.spyOn(window, 'createEl');
     try {
-      const container = document.createElement('div');
-      const mounted = mountModel(container, model, { autoplay: false });
+      const mounted = mountModel(container, model, { createEl, autoplay: false });
       expect(spy).toHaveBeenCalled();
       expect(container.querySelector('.fm-wrap svg')).not.toBeNull();
       expect(container.querySelector('.fm-controls button')).not.toBeNull();

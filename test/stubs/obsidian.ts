@@ -81,8 +81,10 @@ export class FileSystemAdapter {
 export class TextFileView extends Component {}
 export class Modal {
   containerEl = document.createElement('div'); modalEl = document.createElement('div'); contentEl = document.createElement('div');
+  titleElement = document.createElement('div');
+  titleEl = { setText: (text: string) => { this.titleElement.textContent = text; } };
   constructor(public app: unknown) {}
-  open() {} close() {} onOpen() {} onClose() {}
+  open() { document.body.append(this.contentEl); this.onOpen(); } close() { this.contentEl.remove(); } onOpen() {} onClose() {}
 }
 export class Editor {}
 export class EditorSuggest<T> extends Component { constructor(public app: unknown) { super(); } }
