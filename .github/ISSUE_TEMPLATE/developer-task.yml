@@ -1,6 +1,6 @@
 name: Developer task
 description: Create a scoped implementation task under an existing feature.
-type: ["task"]
+type: "Task"
 body:
   - type: markdown
     attributes:
@@ -19,7 +19,7 @@ body:
     id: requirement
     attributes:
       label: Requirement
-      description: Describe the change, relevant files or behavior, and any important constraints.
+      description: Describe the change, relevant files or behaviour, and any important constraints.
       placeholder: What should the developer implement?
     validations:
       required: true
