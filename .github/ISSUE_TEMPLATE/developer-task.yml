@@ -37,7 +37,7 @@ body:
     id: dependencies
     attributes:
       label: Prerequisites and dependencies
-      description: Record external access, credentials, decisions, or other prerequisites here. Do not create a separate issue just to obtain access.
+      description: Describe required access, decisions, or other prerequisites without including passwords, tokens, or other secrets. Do not create a separate issue just to obtain access.
       placeholder: "None, or describe the prerequisite."
     validations:
       required: false
