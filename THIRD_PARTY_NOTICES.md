@@ -1,12 +1,13 @@
 # Third-party notices
 
-FlowMotion uses the following third-party software. draw.io is an optional add-on: its files are not part of the plugin download, and users fetch them from the draw.io release on GitHub. Monaco is built into `main.js`.
+FlowMotion uses the following third-party software. draw.io is downloaded from the draw.io release on GitHub. Monaco is an optional add-on downloaded as a pinned npm package from the Monaco Editor project.
 
-| Component              | Used for                                   | License            |
-| ---------------------- | ------------------------------------------ | ------------------ |
-| draw.io (diagrams.net) | Optional draw.io editor (downloaded into `drawio/`) | Apache License 2.0 |
-| Monaco Editor          | Code editor (built into `main.js`)         | MIT                |
+| Component              | Used for                                                  | License            |
+| ---------------------- | --------------------------------------------------------- | ------------------ |
+| draw.io (diagrams.net) | Optional draw.io editor (downloaded into `drawio/`)       | Apache License 2.0 |
+| Monaco Editor          | Optional Rich Code Editor (downloaded into `monaco/`)     | MIT                |
+| CodeMirror commands    | Undo, redo and editor key bindings (bundled in `main.js`) | MIT                |
 
-The plugin's bundled dependencies are `yaml` (ISC), `elkjs` (Eclipse Public License 2.0) and `monaco-editor` (MIT). See `package.json` for the full list.
+The plugin bundles `yaml` (ISC), `elkjs` (Eclipse Public License 2.0), and MIT-licensed CodeMirror commands and YAML syntax support. The release includes Monaco's CSS in `styles.css`, but not its JavaScript runtime. See `package.json` for the full dependency list.
 
-Obsidian's own API and CodeMirror packages are provided by Obsidian at runtime and are not bundled.
+Obsidian's API, `@codemirror/state`, and `@codemirror/view` are provided by Obsidian at runtime and are not bundled.

@@ -1,9 +1,15 @@
-import { browser, expect } from '@wdio/globals';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { browser, expect } from "@wdio/globals";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
 
 // Settings page tests. Each test starts from a fresh copy of the vault (default settings).
-
 
 let mainWindow: string;
 
@@ -13,7 +19,8 @@ async function inMainWindow<T>(action: () => Promise<T>): Promise<T> {
   try {
     return await action();
   } finally {
-    if (currentWindow !== mainWindow) await browser.switchToWindow(currentWindow);
+    if (currentWindow !== mainWindow)
+      await browser.switchToWindow(currentWindow);
   }
 }
 
@@ -21,337 +28,523 @@ async function openSettings(): Promise<void> {
   await browser.switchToWindow(mainWindow);
   await browser.executeObsidian(({ app }) => {
     app.setting.open();
-    app.setting.openTabById('flowmotion');
+    app.setting.openTabById("flowmotion");
   });
-  await browser.waitUntil(async () => {
-    const settingsWindow = (await browser.getWindowHandles()).find((handle) => handle !== mainWindow);
-    if (settingsWindow) {
-      await browser.switchToWindow(settingsWindow);
-      return true;
-    }
-    return (await browser.$$('.vertical-tab-content .setting-item')).length > 0;
-  }, { timeout: 10000, timeoutMsg: 'Settings window did not open' });
-  await browser.waitUntil(async () => (await browser.$$('.vertical-tab-content .setting-item')).length > 0, {
-    timeout: 10000, timeoutMsg: 'FlowMotion settings did not appear',
-  });
+  await browser.waitUntil(
+    async () => {
+      const settingsWindow = (await browser.getWindowHandles()).find(
+        (handle) => handle !== mainWindow,
+      );
+      if (settingsWindow) {
+        await browser.switchToWindow(settingsWindow);
+        return true;
+      }
+      return (
+        (await browser.$$(".vertical-tab-content .setting-item")).length > 0
+      );
+    },
+    { timeout: 10000, timeoutMsg: "Settings window did not open" },
+  );
+  await browser.waitUntil(
+    async () =>
+      (await browser.$$(".vertical-tab-content .setting-item")).length > 0,
+    {
+      timeout: 10000,
+      timeoutMsg: "FlowMotion settings did not appear",
+    },
+  );
 }
 
 /** Finds a setting row on the open FlowMotion tab by its visible name. */
 async function setting(name: string) {
-  const items = await browser.$$('.vertical-tab-content .setting-item');
+  const items = await browser.$$(".vertical-tab-content .setting-item");
   for (const item of items) {
-    const label = item.$('.setting-item-name');
-    if ((await label.isExisting()) && (await label.getText()) === name) return item;
+    const label = item.$(".setting-item-name");
+    if ((await label.isExisting()) && (await label.getText()) === name)
+      return item;
   }
   throw new Error(`Setting not found: "${name}"`);
 }
 
 async function setToggle(name: string, on: boolean): Promise<void> {
   const item = await setting(name);
-  const box = item.$('.checkbox-container');
-  const isOn = (await box.getAttribute('class')).includes('is-enabled');
+  const box = item.$(".checkbox-container");
+  const isOn = (await box.getAttribute("class")).includes("is-enabled");
   if (isOn !== on) await box.click();
 }
 
 async function toggleIsOn(name: string): Promise<boolean> {
   const item = await setting(name);
-  return (await item.$('.checkbox-container').getAttribute('class')).includes('is-enabled');
+  return (await item.$(".checkbox-container").getAttribute("class")).includes(
+    "is-enabled",
+  );
 }
 
 async function setDropdown(name: string, value: string): Promise<void> {
   const item = await setting(name);
-  await item.$('select:not(.is-measuring)').selectByAttribute('value', value);
+  await item.$("select:not(.is-measuring)").selectByAttribute("value", value);
 }
 
 async function dropdownValue(name: string): Promise<string> {
   const item = await setting(name);
-  return item.$('select:not(.is-measuring)').getValue();
+  return item.$("select:not(.is-measuring)").getValue();
 }
 
 async function dropdownOptions(name: string): Promise<string[]> {
   const item = await setting(name);
-  const opts = await item.$$('select:not(.is-measuring) option');
+  const opts = await item.$$("select:not(.is-measuring) option");
   const values: string[] = [];
-  for (const option of opts) values.push(await option.getAttribute('value'));
+  for (const option of opts) values.push(await option.getAttribute("value"));
   return values;
 }
 
 async function pluginSettings(): Promise<Record<string, unknown>> {
-  return inMainWindow(() => browser.executeObsidian(({ plugins }) => ({ ...(plugins as Record<string, { settings: Record<string, unknown> }>).flowmotion!.settings })));
+  return inMainWindow(() =>
+    browser.executeObsidian(({ plugins }) => ({
+      ...(plugins as Record<string, { settings: Record<string, unknown> }>)
+        .flowmotion!.settings,
+    })),
+  );
 }
 
 async function vaultPath(): Promise<string> {
-  return inMainWindow(() => browser.executeObsidian(({ app }) => (app.vault.adapter as unknown as { basePath: string }).basePath));
+  return inMainWindow(() =>
+    browser.executeObsidian(
+      ({ app }) =>
+        (app.vault.adapter as unknown as { basePath: string }).basePath,
+    ),
+  );
 }
 
 /** The data.json file the plugin writes through saveData(). */
 function savedDataPath(base: string): string {
-  return join(base, '.obsidian', 'plugins', 'flowmotion', 'data.json');
+  return join(base, ".obsidian", "plugins", "flowmotion", "data.json");
 }
 
-async function waitForSavedSetting(base: string, key: string, expected: unknown): Promise<void> {
+async function waitForSavedSetting(
+  base: string,
+  key: string,
+  expected: unknown,
+): Promise<void> {
   await browser.waitUntil(
     () => {
       try {
-        return JSON.parse(readFileSync(savedDataPath(base), 'utf8'))[key] === expected;
+        return (
+          JSON.parse(readFileSync(savedDataPath(base), "utf8"))[key] ===
+          expected
+        );
       } catch (error) {
-        if (error instanceof SyntaxError || (error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
+        if (
+          error instanceof SyntaxError ||
+          (error instanceof Error && "code" in error && error.code === "ENOENT")
+        ) {
           return false;
         }
         throw error;
       }
     },
-    { timeout: 5000, timeoutMsg: `${key} was not saved as ${JSON.stringify(expected)}` },
+    {
+      timeout: 5000,
+      timeoutMsg: `${key} was not saved as ${JSON.stringify(expected)}`,
+    },
   );
 }
 
 async function noticeTexts(): Promise<string[]> {
-  const notices = await browser.$$('.notice');
+  const notices = await browser.$$(".notice");
   const texts: string[] = [];
   for (const notice of notices) texts.push(await notice.getText());
   return texts;
 }
 
 async function waitForNotice(fragment: string, timeout = 5000): Promise<void> {
-  await browser.waitUntil(async () => (await noticeTexts()).some((t) => t.includes(fragment)), {
-    timeout,
-    timeoutMsg: `no notice containing "${fragment}"`,
-  });
+  await browser.waitUntil(
+    async () => (await noticeTexts()).some((t) => t.includes(fragment)),
+    {
+      timeout,
+      timeoutMsg: `no notice containing "${fragment}"`,
+    },
+  );
 }
 
-describe('FlowMotion settings page', () => {
+describe("FlowMotion settings page", () => {
   beforeEach(async () => {
-    await browser.reloadObsidian({ vault: 'e2e/vaults/simple' });
+    await browser.reloadObsidian({ vault: "e2e/vaults/simple" });
     mainWindow = await browser.getWindowHandle();
   });
 
-  describe('layout', () => {
-    it('shows every setting in the main group', async () => {
+  describe("layout", () => {
+    it("shows every setting in the main group", async () => {
       await openSettings();
       for (const name of [
-        'Autoplay',
-        'draw.io background in light mode',
-        'draw.io background in dark mode',
-        'Default speed',
-        'Playback controls',
+        "Autoplay",
+        "draw.io background in light mode",
+        "draw.io background in dark mode",
+        "Default speed",
+        "Playback controls",
       ]) {
         await setting(name);
       }
     });
 
-    it('shows the optional add-ons group with its heading and the draw.io toggle', async () => {
+    it("shows the optional add-ons group with its heading and the draw.io toggle", async () => {
       await openSettings();
-      const heading = await browser.$('.vertical-tab-content .setting-item-heading .setting-item-name');
-      await expect(heading).toHaveText('Optional add-ons');
-      await setting('Add-on files');
-      await setting('draw.io editor');
+      const heading = await browser.$(
+        ".vertical-tab-content .setting-item-heading .setting-item-name",
+      );
+      await expect(heading).toHaveText("Optional add-ons");
+      await setting("Add-on files");
+      await setting("draw.io editor");
     });
 
-    it('shows the built-in code editor toggle outside the add-ons group', async () => {
+    it("explains that add-ons are downloaded when turned on and deleted when turned off", async () => {
       await openSettings();
-      await setting('Code editor');
+      const item = await setting("Add-on files");
+      const desc = await item.$(".setting-item-description").getText();
+      expect(desc).toContain("downloaded only when enabled");
+      expect(desc).toContain("draw.io comes from its upstream project");
+      expect(desc).toContain("deleted when disabled");
     });
 
-    it('explains that add-ons are downloaded when turned on and deleted when turned off', async () => {
+    it("has no toggle or dropdown on the playback-controls row", async () => {
       await openSettings();
-      const item = await setting('Add-on files');
-      const desc = await item.$('.setting-item-description').getText();
-      expect(desc).toContain('not part of FlowMotion releases');
-      expect(desc).toContain('downloads it from its upstream project');
-      expect(desc).toContain('deletes the files');
-    });
-
-    it('has no toggle or dropdown on the playback-controls row', async () => {
-      await openSettings();
-      const item = await setting('Playback controls');
-      expect(await item.$('.checkbox-container').isExisting()).toBe(false);
-      expect(await item.$('select').isExisting()).toBe(false);
+      const item = await setting("Playback controls");
+      expect(await item.$(".checkbox-container").isExisting()).toBe(false);
+      expect(await item.$("select").isExisting()).toBe(false);
     });
   });
 
-  describe('autoplay', () => {
-    it('is on by default', async () => {
+  describe("autoplay", () => {
+    it("is on by default", async () => {
       await openSettings();
-      expect(await toggleIsOn('Autoplay')).toBe(true);
+      expect(await toggleIsOn("Autoplay")).toBe(true);
       expect((await pluginSettings()).autoplay).toBe(true);
     });
 
-    it('turns off, saves to disk, and shows the change on reopen', async () => {
+    it("turns off, saves to disk, and shows the change on reopen", async () => {
       await openSettings();
-      await setToggle('Autoplay', false);
+      await setToggle("Autoplay", false);
       expect((await pluginSettings()).autoplay).toBe(false);
 
       const base = await vaultPath();
-      await waitForSavedSetting(base, 'autoplay', false);
+      await waitForSavedSetting(base, "autoplay", false);
 
       // Close and reopen the settings tab: the toggle should still be off.
       await browser.switchToWindow(mainWindow);
       await browser.executeObsidian(({ app }) => app.setting.close());
       await openSettings();
-      expect(await toggleIsOn('Autoplay')).toBe(false);
+      expect(await toggleIsOn("Autoplay")).toBe(false);
     });
 
-    it('turns back on', async () => {
+    it("turns back on", async () => {
       await openSettings();
-      await setToggle('Autoplay', false);
-      await setToggle('Autoplay', true);
+      await setToggle("Autoplay", false);
+      await setToggle("Autoplay", true);
       expect((await pluginSettings()).autoplay).toBe(true);
     });
   });
 
-  describe('default speed', () => {
-    it('defaults to 1×', async () => {
+  describe("default speed", () => {
+    it("defaults to 1×", async () => {
       await openSettings();
-      expect(await dropdownValue('Default speed')).toBe('1');
+      expect(await dropdownValue("Default speed")).toBe("1");
       expect((await pluginSettings()).speed).toBe(1);
     });
 
-    it('offers 0.5×, 1× and 2×', async () => {
+    it("offers 0.5×, 1× and 2×", async () => {
       await openSettings();
-      expect((await dropdownOptions('Default speed')).sort()).toEqual(['0.5', '1', '2']);
+      expect((await dropdownOptions("Default speed")).sort()).toEqual([
+        "0.5",
+        "1",
+        "2",
+      ]);
     });
 
-    it('saves a numeric speed, not text', async () => {
+    it("saves a numeric speed, not text", async () => {
       await openSettings();
-      await setDropdown('Default speed', '2');
+      await setDropdown("Default speed", "2");
       expect((await pluginSettings()).speed).toBe(2);
-      expect(typeof (await pluginSettings()).speed).toBe('number');
+      expect(typeof (await pluginSettings()).speed).toBe("number");
 
       const base = await vaultPath();
-      await waitForSavedSetting(base, 'speed', 2);
+      await waitForSavedSetting(base, "speed", 2);
     });
 
-    it('saves 0.5×', async () => {
+    it("saves 0.5×", async () => {
       await openSettings();
-      await setDropdown('Default speed', '0.5');
+      await setDropdown("Default speed", "0.5");
       expect((await pluginSettings()).speed).toBe(0.5);
     });
   });
 
-  describe('draw.io background', () => {
-    it('light mode defaults to light and offers the paper options', async () => {
+  describe("draw.io background", () => {
+    it("light mode defaults to light and offers the paper options", async () => {
       await openSettings();
-      expect(await dropdownValue('draw.io background in light mode')).toBe('light');
-      const options = await dropdownOptions('draw.io background in light mode');
+      expect(await dropdownValue("draw.io background in light mode")).toBe(
+        "light",
+      );
+      const options = await dropdownOptions("draw.io background in light mode");
       expect(options.length).toBeGreaterThan(1);
-      expect(options).toContain('light');
-      expect(options).toContain('dark');
-      expect(options).toContain('none');
+      expect(options).toContain("light");
+      expect(options).toContain("dark");
+      expect(options).toContain("none");
     });
 
-    it('dark mode defaults to dark', async () => {
+    it("dark mode defaults to dark", async () => {
       await openSettings();
-      expect(await dropdownValue('draw.io background in dark mode')).toBe('dark');
+      expect(await dropdownValue("draw.io background in dark mode")).toBe(
+        "dark",
+      );
     });
 
-    it('light mode choice saves', async () => {
+    it("light mode choice saves", async () => {
       await openSettings();
-      await setDropdown('draw.io background in light mode', 'none');
-      expect((await pluginSettings()).paperLight).toBe('none');
+      await setDropdown("draw.io background in light mode", "none");
+      expect((await pluginSettings()).paperLight).toBe("none");
     });
 
-    it('dark mode choice saves independently of light mode', async () => {
+    it("dark mode choice saves independently of light mode", async () => {
       await openSettings();
-      await setDropdown('draw.io background in dark mode', 'none');
-      expect((await pluginSettings()).paperDark).toBe('none');
-      expect((await pluginSettings()).paperLight).toBe('light');
+      await setDropdown("draw.io background in dark mode", "none");
+      expect((await pluginSettings()).paperDark).toBe("none");
+      expect((await pluginSettings()).paperLight).toBe("light");
     });
   });
 
-  describe('add-ons', () => {
-    it('draw.io editor is off by default and shows not installed', async () => {
+  describe("add-ons", () => {
+    it("draw.io editor is off by default and shows not installed", async () => {
       await openSettings();
-      expect(await toggleIsOn('draw.io editor')).toBe(false);
-      await browser.waitUntil(async () => (await (await setting('draw.io editor')).getText()).includes('Status: not installed.'), {
-        timeout: 5000,
-        timeoutMsg: 'draw.io status did not say "not installed"',
-      });
+      expect(await toggleIsOn("draw.io editor")).toBe(false);
+      await browser.waitUntil(
+        async () =>
+          (await (await setting("draw.io editor")).getText()).includes(
+            "Status: not installed.",
+          ),
+        {
+          timeout: 5000,
+          timeoutMsg: 'draw.io status did not say "not installed"',
+        },
+      );
     });
 
-    it('turning draw.io on downloads it and turning it off deletes it', async function () {
+    it("turning draw.io on downloads it and turning it off deletes it", async function () {
       this.timeout(180000);
-      const dir = join(await vaultPath(), '.obsidian', 'plugins', 'flowmotion', 'drawio');
+      const dir = join(
+        await vaultPath(),
+        ".obsidian",
+        "plugins",
+        "flowmotion",
+        "drawio",
+      );
       await openSettings();
-      await setToggle('draw.io editor', true);
-      await waitForNotice('the draw.io editor add-on is installed', 120000);
-      expect(existsSync(join(dir, 'index.html'))).toBe(true);
+      await setToggle("draw.io editor", true);
+      await waitForNotice("the draw.io editor add-on is installed", 120000);
+      expect(existsSync(join(dir, "index.html"))).toBe(true);
       expect((await pluginSettings()).drawioEnabled).toBe(true);
-      await browser.waitUntil(async () => (await (await setting('draw.io editor')).getText()).includes('Status: installed.'), { timeout: 5000, timeoutMsg: 'draw.io status did not say "installed"' });
-      await setToggle('draw.io editor', false);
-      await waitForNotice('the draw.io editor add-on was removed');
+      await browser.waitUntil(
+        async () =>
+          (await (await setting("draw.io editor")).getText()).includes(
+            "Status: installed.",
+          ),
+        { timeout: 5000, timeoutMsg: 'draw.io status did not say "installed"' },
+      );
+      await setToggle("draw.io editor", false);
+      await waitForNotice("the draw.io editor add-on was removed");
       expect(existsSync(dir)).toBe(false);
       expect((await pluginSettings()).drawioEnabled).toBe(false);
-      await browser.waitUntil(async () => (await (await setting('draw.io editor')).getText()).includes('Status: not installed.'), { timeout: 5000, timeoutMsg: 'draw.io status did not say "not installed"' });
+      await browser.waitUntil(
+        async () =>
+          (await (await setting("draw.io editor")).getText()).includes(
+            "Status: not installed.",
+          ),
+        {
+          timeout: 5000,
+          timeoutMsg: 'draw.io status did not say "not installed"',
+        },
+      );
     });
 
-    it('turning draw.io on does not download again when its files are already installed', async () => {
+    it("turning draw.io on does not download again when its files are already installed", async () => {
       const base = await vaultPath();
-      const dir = join(base, '.obsidian', 'plugins', 'flowmotion', 'drawio');
+      const dir = join(base, ".obsidian", "plugins", "flowmotion", "drawio");
       mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, 'index.html'), '<!doctype html><title>stub</title>');
+      writeFileSync(
+        join(dir, "index.html"),
+        "<!doctype html><title>stub</title>",
+      );
       await browser.reloadObsidian({ vault: base, copy: false });
       mainWindow = await browser.getWindowHandle();
       await openSettings();
-      await browser.waitUntil(async () => (await (await setting('draw.io editor')).getText()).includes('Status: installed.'), { timeout: 5000, timeoutMsg: 'draw.io status did not say "installed"' });
-      await setToggle('draw.io editor', true);
-      await waitForNotice('the draw.io editor add-on is installed');
-      expect(readFileSync(join(dir, 'index.html'), 'utf8')).toContain('stub');
-      await setToggle('draw.io editor', false);
-      await waitForNotice('the draw.io editor add-on was removed');
+      await browser.waitUntil(
+        async () =>
+          (await (await setting("draw.io editor")).getText()).includes(
+            "Status: installed.",
+          ),
+        { timeout: 5000, timeoutMsg: 'draw.io status did not say "installed"' },
+      );
+      await setToggle("draw.io editor", true);
+      await waitForNotice("the draw.io editor add-on is installed");
+      expect(readFileSync(join(dir, "index.html"), "utf8")).toContain("stub");
+      await setToggle("draw.io editor", false);
+      await waitForNotice("the draw.io editor add-on was removed");
       expect(existsSync(dir)).toBe(false);
     });
 
-    it('the code editor is built in: turning it on needs no download, and Monaco runs in Obsidian', async () => {
+    it("the Rich Code Editor is optional and CodeMirror remains the default", async () => {
       await openSettings();
-      expect(await toggleIsOn('Code editor')).toBe(false);
-      await setToggle('Code editor', true);
-      expect((await pluginSettings()).codeEditor).toBe(true);
-      expect(existsSync(join(await vaultPath(), '.obsidian', 'plugins', 'flowmotion', 'monaco'))).toBe(false);
+      const rich = "Rich Code Editor (Monaco)";
+      expect(await toggleIsOn(rich)).toBe(false);
+      await browser.waitUntil(
+        async () =>
+          (await (await setting(rich)).getText()).includes(
+            "Status: not installed.",
+          ),
+        {
+          timeout: 5000,
+          timeoutMsg: 'Rich Code Editor status did not say "not installed"',
+        },
+      );
+      expect((await pluginSettings()).codeEditor).toBe(false);
+      expect(
+        existsSync(
+          join(
+            await vaultPath(),
+            ".obsidian",
+            "plugins",
+            "flowmotion",
+            "monaco",
+          ),
+        ),
+      ).toBe(false);
+    });
 
-      const mounted = await inMainWindow(() => browser.executeObsidian(async ({ plugins }) => {
-        try {
-          const plugin = (plugins as unknown as Record<string, { loader: { acquire(): Promise<{ mount(h: HTMLElement, o: unknown): { dispose(): void } }>; release(): void } }>).flowmotion!;
+    it("loads Monaco from npm package files, renders an opaque context menu, and preserves unrelated editors", async () => {
+      const base = await vaultPath();
+      const dir = join(base, ".obsidian", "plugins", "flowmotion", "monaco");
+      mkdirSync(join(dir, "min"), { recursive: true });
+      cpSync(
+        join(process.cwd(), "node_modules", "monaco-editor", "min", "vs"),
+        join(dir, "min", "vs"),
+        { recursive: true },
+      );
+
+      await inMainWindow(async () => {
+        await browser.executeObsidian(async ({ plugins }) => {
+          const plugin = (
+            plugins as unknown as Record<
+              string,
+              {
+                loader: {
+                  acquire(): Promise<{
+                    mount(h: HTMLElement, o: unknown): { dispose(): void };
+                  }>;
+                  release(): void;
+                };
+              }
+            >
+          ).flowmotion!;
           const api = await plugin.loader.acquire();
           const host = document.body.createDiv();
-          host.style.cssText = 'width:400px;height:200px';
-          const handle = api.mount(host, { value: 'nodes: []', dark: false, colors: { bg: '#ffffff', fg: '#000000', muted: '#888888', border: '#cccccc', accent: '#7700ff', font: 'monospace' }, onChange() {} });
-          await new Promise((r) => setTimeout(r, 500));
-          const ok = !!host.querySelector('.monaco-editor') && !!document.head.querySelector('style[data-flowmotion-monaco]');
-          handle.dispose(); host.remove(); plugin.loader.release();
-          return ok ? 'ok' : 'no editor element';
-        } catch (e) { return String(e); }
-      }));
-      expect(mounted).toBe('ok');
-
-      await setToggle('Code editor', false);
-      expect((await pluginSettings()).codeEditor).toBe(false);
+          host.id = "fm-monaco-test";
+          host.style.cssText =
+            "position:fixed;top:20px;left:20px;z-index:10000;width:400px;height:200px";
+          const handle = api.mount(host, {
+            value: "nodes: []",
+            dark: true,
+            colors: {
+              bg: "#252525",
+              fg: "#eeeeee",
+              muted: "#888888",
+              border: "#cccccc",
+              accent: "#7700ff",
+              font: "monospace",
+            },
+            onChange() {},
+          });
+          type Monaco = typeof import("monaco-editor/editor/editor.api");
+          const amdRequire = (window as Window & {
+            require: (modules: string[], ready: (monaco: Monaco) => void, fail: (error: Error) => void) => void;
+          }).require;
+          const monaco = await new Promise<Monaco>((resolve, reject) =>
+            amdRequire(["vs/editor/editor.main"], resolve, reject),
+          );
+          const foreignHost = document.body.createDiv();
+          const foreignModel = monaco.editor.createModel("unsaved text", "plaintext");
+          const foreignEditor = monaco.editor.create(foreignHost, { model: foreignModel });
+          const foreignWidget = foreignHost.createDiv({ cls: "monaco-hover" });
+          host.addEventListener(
+            "fm-test-dispose",
+            () => {
+              try {
+                plugin.loader.release();
+                host.dataset.cleanup = [
+                  foreignEditor.getModel() === foreignModel && !foreignModel.isDisposed(),
+                  foreignWidget.isConnected,
+                  !host.querySelector(".monaco-editor"),
+                ].join("/");
+              } finally {
+                handle.dispose();
+                foreignEditor.dispose();
+                foreignModel.dispose();
+                foreignHost.remove();
+              }
+            },
+            { once: true },
+          );
+        });
+        try {
+          const token = await browser.$(
+            "#fm-monaco-test .view-line > span > span:first-child",
+          );
+          await token.waitForDisplayed();
+          await token.click({ button: "right" });
+          const colors = await browser.executeObsidian(() => {
+            const selector = ".monaco-menu-container .monaco-scrollable-element";
+            const menu =
+              document.querySelector(selector) ??
+              Array.from(document.querySelectorAll(".shadow-root-host"))
+                .map((root) => root.shadowRoot?.querySelector(selector))
+                .find(Boolean);
+            if (!menu) return "Monaco did not open its context menu";
+            const style = getComputedStyle(menu);
+            return `${style.backgroundColor} / ${style.color}`;
+          });
+          expect(colors).toBe("rgb(37, 37, 37) / rgb(238, 238, 238)");
+        } finally {
+          const cleanup = await browser.executeObsidian(() => {
+            const host = document.getElementById("fm-monaco-test");
+            host?.dispatchEvent(new Event("fm-test-dispose"));
+            host?.remove();
+            return host?.dataset.cleanup;
+          });
+          expect(cleanup).toBe("true/true/true");
+        }
+      });
     });
   });
 
-  describe('persistence', () => {
-    it('waits for a partially written settings file to become valid', async () => {
+  describe("persistence", () => {
+    it("waits for a partially written settings file to become valid", async () => {
       const base = await vaultPath();
       const path = savedDataPath(base);
       writeFileSync(path, '{"speed":');
       const timer = setTimeout(() => writeFileSync(path, '{"speed":2}'), 1000);
       try {
-        await waitForSavedSetting(base, 'speed', 2);
+        await waitForSavedSetting(base, "speed", 2);
       } finally {
         clearTimeout(timer);
       }
     });
 
-    it('keeps every changed value after Obsidian restarts on the same vault', async () => {
+    it("keeps every changed value after Obsidian restarts on the same vault", async () => {
       await openSettings();
-      await setToggle('Autoplay', false);
-      await setDropdown('Default speed', '2');
-      await setDropdown('draw.io background in light mode', 'none');
-      await setDropdown('draw.io background in dark mode', 'light');
-      await setToggle('Code editor', true);
-
+      await setToggle("Autoplay", false);
+      await setDropdown("Default speed", "2");
+      await setDropdown("draw.io background in light mode", "none");
+      await setDropdown("draw.io background in dark mode", "light");
       const base = await vaultPath();
-      await waitForSavedSetting(base, 'speed', 2);
-      await waitForSavedSetting(base, 'codeEditor', true);
+      await waitForSavedSetting(base, "speed", 2);
+      await waitForSavedSetting(base, "codeEditor", false);
 
       // The vault is already a temporary copy, so restart it in place.
       await browser.switchToWindow(mainWindow);
@@ -359,14 +552,24 @@ describe('FlowMotion settings page', () => {
       mainWindow = await browser.getWindowHandle();
 
       const saved = await pluginSettings();
-      expect(saved).toMatchObject({ autoplay: false, speed: 2, paperLight: 'none', paperDark: 'light', codeEditor: true });
+      expect(saved).toMatchObject({
+        autoplay: false,
+        speed: 2,
+        paperLight: "none",
+        paperDark: "light",
+        codeEditor: false,
+      });
 
       await openSettings();
-      expect(await toggleIsOn('Autoplay')).toBe(false);
-      expect(await dropdownValue('Default speed')).toBe('2');
-      expect(await dropdownValue('draw.io background in light mode')).toBe('none');
-      expect(await dropdownValue('draw.io background in dark mode')).toBe('light');
-      expect(await toggleIsOn('Code editor')).toBe(true);
+      expect(await toggleIsOn("Autoplay")).toBe(false);
+      expect(await dropdownValue("Default speed")).toBe("2");
+      expect(await dropdownValue("draw.io background in light mode")).toBe(
+        "none",
+      );
+      expect(await dropdownValue("draw.io background in dark mode")).toBe(
+        "light",
+      );
+      expect(await toggleIsOn("Rich Code Editor (Monaco)")).toBe(false);
     });
   });
 });
