@@ -2,6 +2,8 @@
 
 ## [1.0.2]
 
+- Monaco restores Obsidian's module loader after startup. Invalid add-on archives now fail installation cleanly, even when the affected archive entry is skipped.
+
 - CodeMirror is the default editor for `.flow` files and the diagram edit window. It includes YAML syntax highlighting, line numbers, and a live preview, with no add-on download.
 - Monaco is an optional desktop add-on. FlowMotion downloads the pinned Monaco Editor package from npm when you enable **Rich Code Editor (Monaco)**.
 - Press **Shift+Alt+F** to format a diagram in CodeMirror. Undo can reverse formatting separately from typing.

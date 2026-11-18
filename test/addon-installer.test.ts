@@ -187,6 +187,21 @@ describe("add-on installation through the vault adapter", () => {
     expect(unzip).not.toHaveBeenCalled();
   });
 
+  it("rejects a truncated skipped tar entry and removes the partial install", async () => {
+    const archive = zlib.gunzipSync(await npmArchive({
+      "package/min/vs/loader.js": "loader",
+      "package/package.json": "{}",
+    }));
+    // Keep the first entry and the second entry's header, but not its data.
+    downloaded.body = Uint8Array.from(zlib.gzipSync(archive.subarray(0, 3 * 512)));
+    const { adapter, files, dirs } = storage();
+    const root = ".obsidian/plugins/flowmotion";
+
+    await expect(installAddon(MONACO, adapter, root)).rejects.toThrow("Unexpected end of data");
+    expect(dirs.has(`${root}/monaco.installing`)).toBe(false);
+    expect(files.size).toBe(0);
+  });
+
   it("rejects unsafe archive targets and retains the installed add-on", async () => {
     const { adapter, files, dirs } = storage();
     const root = ".obsidian/plugins/flowmotion";

@@ -22,7 +22,12 @@ type MonacoRequire = {
   ): void;
   config(options: { paths: { vs: string }; preferScriptTags: boolean }): void;
 };
-type MonacoWindow = Window & { require?: MonacoRequire };
+// Keep the AMD reference across plugin reloads without replacing the host's require.
+const monacoRequire = Symbol.for("flowmotion.monacoRequire");
+type MonacoWindow = Window & {
+  require?: MonacoRequire;
+  [monacoRequire]?: MonacoRequire;
+};
 
 /**
  * Loads Monaco's optional AMD distribution from the npm package on first use.
@@ -68,41 +73,49 @@ export class MonacoLoader {
     const amdWindow = activeWindow as MonacoWindow;
     const doc = amdWindow.document;
     const url = await this.server.url();
-    if (!amdWindow.require?.config) {
-      const script = doc.createElement("script");
-      script.src = `${url}/min/vs/loader.js`;
-      try {
+    const cached = amdWindow[monacoRequire];
+    const hostRequire = Object.getOwnPropertyDescriptor(amdWindow, "require");
+    const script =
+      cached || amdWindow.require?.config ? undefined : doc.createElement("script");
+    try {
+      if (script) {
+        script.src = `${url}/min/vs/loader.js`;
         await new Promise<void>((resolve, reject) => {
           script.onload = () => resolve();
           script.onerror = () =>
             reject(new Error("the Monaco AMD loader script could not be loaded"));
           doc.head.appendChild(script);
         });
-      } catch (e) {
+      }
+
+      const amdRequire = cached ?? amdWindow.require;
+      if (!amdRequire?.config)
+        throw new Error("the Monaco AMD loader did not initialize");
+      amdWindow[monacoRequire] = amdRequire;
+      amdRequire.config({
+        paths: { vs: `${url}/min/vs` },
+        preferScriptTags: true,
+      });
+      const [api, yaml] = await new Promise<[MonacoNamespace, YamlDefinition]>(
+        (resolve, reject) => {
+          amdRequire(
+            ["vs/editor/editor.main", MONACO_YAML_MODULE],
+            (monacoApi, yamlDefinition) => resolve([monacoApi, yamlDefinition]),
+            reject,
+          );
+        },
+      );
+      init(api, yaml);
+      this.api = { mount, purge };
+      return this.api;
+    } finally {
+      if (script) {
+        // editor.main needs the AMD global during its initial evaluation.
+        if (hostRequire) Object.defineProperty(amdWindow, "require", hostRequire);
+        else delete amdWindow.require;
         script.remove();
-        throw e;
       }
     }
-
-    const amdRequire = amdWindow.require;
-    if (!amdRequire?.config)
-      throw new Error("the Monaco AMD loader did not initialize");
-    amdRequire.config({
-      paths: { vs: `${url}/min/vs` },
-      preferScriptTags: true,
-    });
-    const [api, yaml] = await new Promise<[MonacoNamespace, YamlDefinition]>(
-      (resolve, reject) => {
-        amdRequire(
-          ["vs/editor/editor.main", MONACO_YAML_MODULE],
-          (monacoApi, yamlDefinition) => resolve([monacoApi, yamlDefinition]),
-          reject,
-        );
-      },
-    );
-    init(api, yaml);
-    this.api = { mount, purge };
-    return this.api;
   }
 
   private cleanup() {

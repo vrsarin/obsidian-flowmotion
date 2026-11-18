@@ -57,6 +57,9 @@ function untar(
   let total = 0;
   return new Promise((resolve, reject) => {
     extract.on('entry', (header, stream, next) => {
+      stream.once('error', (error: Error) => {
+        if (!extract.destroyed) next(error);
+      });
       if (header.type !== 'file' || !select(header.name)) {
         stream.resume();
         stream.once('end', () => next());
@@ -99,7 +102,6 @@ function untar(
           (error: unknown) => next(error instanceof Error ? error : new Error(String(error))),
         );
       });
-      stream.once('error', (error: Error) => next(error));
     });
     extract.once('finish', resolve);
     extract.once('error', reject);

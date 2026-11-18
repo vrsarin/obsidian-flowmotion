@@ -443,7 +443,14 @@ describe("FlowMotion settings page", () => {
               }
             >
           ).flowmotion!;
+          type Monaco = typeof import("monaco-editor/editor/editor.api");
+          const hostWindow = window as Window & { require?: unknown; monaco?: Monaco };
+          const hostRequire = hostWindow.require;
           const api = await plugin.loader.acquire();
+          if (hostWindow.require !== hostRequire)
+            throw new Error("Monaco replaced the host's window.require");
+          const monaco = hostWindow.monaco;
+          if (!monaco) throw new Error("Monaco did not publish its editor API");
           const host = document.body.createDiv();
           host.id = "fm-monaco-test";
           host.style.cssText =
@@ -461,13 +468,6 @@ describe("FlowMotion settings page", () => {
             },
             onChange() {},
           });
-          type Monaco = typeof import("monaco-editor/editor/editor.api");
-          const amdRequire = (window as Window & {
-            require: (modules: string[], ready: (monaco: Monaco) => void, fail: (error: Error) => void) => void;
-          }).require;
-          const monaco = await new Promise<Monaco>((resolve, reject) =>
-            amdRequire(["vs/editor/editor.main"], resolve, reject),
-          );
           const foreignHost = document.body.createDiv();
           const foreignModel = monaco.editor.createModel("unsaved text", "plaintext");
           const foreignEditor = monaco.editor.create(foreignHost, { model: foreignModel });
