@@ -1,6 +1,6 @@
 name: Developer task
 description: Create a scoped implementation task under an existing feature.
-labels: ["task"]
+type: ["task"]
 body:
   - type: markdown
     attributes:
