@@ -35,7 +35,9 @@ function button(create: ElementFactory, label: string, text: string, onClick: ()
 export function mountModel(container: HTMLElement, model: Model, opts: MountOptions = {}): Mounted {
   const doc = container.ownerDocument;
   const win = doc.defaultView ?? window;
-  const create: ElementFactory = opts.createEl ?? ((tag) => doc.createElement(tag));
+  const create: ElementFactory = opts.createEl ?? (typeof createEl === 'function'
+    ? createEl
+    : (tag) => doc.createElement(tag));
   const prefix = `fm${++counter}`;
   const wrap = create('div');
   wrap.className = 'fm-wrap';

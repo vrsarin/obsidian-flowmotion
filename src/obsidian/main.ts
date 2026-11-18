@@ -233,10 +233,6 @@ export default class FlowMotionPlugin extends Plugin {
     this.app.vault.adapter,
     () => `${this.pluginDir}/${ADDONS.drawio.dir}`,
   );
-  private monacoServer = new StaticServer(
-    this.app.vault.adapter,
-    () => `${this.pluginDir}/${ADDONS.monaco.dir}`,
-  );
 
   /** Vault-relative folder that holds this plugin's files (where the optional add-ons go). */
   get pluginDir(): string {
@@ -249,11 +245,7 @@ export default class FlowMotionPlugin extends Plugin {
   async onload() {
     const saved = (await this.loadData()) as Partial<Settings> | null;
     this.settings = { ...DEFAULTS, ...saved };
-    this.loader = new MonacoLoader(
-      this.monacoServer,
-      this.app.vault.adapter,
-      this.pluginDir,
-    );
+    this.loader = new MonacoLoader();
     this.registerMarkdownCodeBlockProcessor("flowmotion", (source, el, ctx) => {
       const host = el.createDiv({ cls: "fm-host" });
       const child = new DiagramChild(
@@ -453,7 +445,6 @@ export default class FlowMotionPlugin extends Plugin {
     this.cache.clear();
     this.loader.dispose();
     this.drawioServer.stop();
-    this.monacoServer.stop();
   }
 
   insertDiagram(editor: Editor) {
@@ -508,7 +499,6 @@ export default class FlowMotionPlugin extends Plugin {
       retiredViews = views;
     }
     if (id === "drawio") this.drawioServer.stop();
-    else this.monacoServer.stop();
     try {
       await removeAddon(ADDONS[id], this.app.vault.adapter, this.pluginDir);
     } catch (e) {
@@ -683,7 +673,7 @@ export class FlowMotionSettings extends PluginSettingTab {
         items: [
           {
             name: "Add-on files",
-            desc: "Optional editor files are downloaded only when enabled and deleted when disabled. Monaco comes from its pinned npm package; draw.io comes from its upstream project. Desktop app only.",
+            desc: "The code editor is bundled with FlowMotion. draw.io files are downloaded when enabled and deleted when disabled. Desktop app only.",
           },
           this.addonDefinition({
             name: "draw.io editor",
@@ -693,7 +683,7 @@ export class FlowMotionSettings extends PluginSettingTab {
           }),
           this.addonDefinition({
             name: "Rich Code Editor (Monaco)",
-            desc: "Adds Monaco, syntax help and advanced editing features to .flow files and the edit dialog. CodeMirror remains the default. Desktop app only.",
+            desc: "Uses the bundled Monaco editor with syntax help and advanced editing features in .flow files and the edit dialog. CodeMirror remains the default. Desktop app only.",
             key: "codeEditor",
             ready: "monaco",
           }),

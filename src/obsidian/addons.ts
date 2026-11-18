@@ -75,6 +75,7 @@ export const ADDONS: Record<AddonId, AddonSpec> = { drawio: DRAWIO, monaco: MONA
 export async function addonStatus(app: App, pluginDir: string): Promise<AddonStatus> {
   return {
     drawio: await app.vault.adapter.exists(`${pluginDir}/${DRAWIO.dir}/${DRAWIO.marker}`),
-    monaco: await app.vault.adapter.exists(`${pluginDir}/${MONACO.dir}/${MONACO.marker}`),
+    // Monaco is bundled with the plugin and never downloaded or executed at runtime.
+    monaco: true,
   };
 }

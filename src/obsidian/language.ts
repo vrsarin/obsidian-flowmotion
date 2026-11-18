@@ -1,7 +1,7 @@
 import { EditorSuggest, TFile, type App, type Editor, type EditorPosition, type EditorSuggestContext, type EditorSuggestTriggerInfo } from 'obsidian';
 import { Decoration, EditorView, ViewPlugin, hoverTooltip, type DecorationSet, type ViewUpdate } from '@codemirror/view';
 import { RangeSetBuilder, type Extension } from '@codemirror/state';
-import { relativePath, resolveVaultPath } from '../core/embed';
+import { resolveVaultPath } from '../core/embed';
 import { ITEM_SNIPPETS, completeAt, docsAt, itemListAt } from '../schema/complete';
 import { bodyAround, findBlocks, type Block } from '../schema/blocks';
 import { formatSource } from '../schema/format';
@@ -143,15 +143,7 @@ export class FlowSuggest extends EditorSuggest<Item> {
     const q = c.query.toLowerCase();
     const before = c.editor.getLine(c.end.line).slice(0, c.end.ch);
     const out: Item[] = [];
-    if (SRC_LINE.test(before)) {
-      const note = c.file?.path ?? '';
-      const dir = note.includes('/') ? note.slice(0, note.lastIndexOf('/')) : '';
-      for (const f of this.app.vault.getFiles().filter((x) => /^(flow|ya?ml|json)$/i.test(x.extension))) {
-        const rel = relativePath(dir, f.path);
-        if (rel.toLowerCase().includes(q)) out.push({ label: rel, insert: rel, kind: 'file', detail: f.extension === 'flow' ? 'diagram file' : f.extension });
-      }
-      return out.filter((x) => x.insert !== c.query).sort((a, b) => Number(b.label.endsWith('.flow')) - Number(a.label.endsWith('.flow')) || a.label.localeCompare(b.label)).slice(0, 50);
-    }
+    if (SRC_LINE.test(before)) return out;
     const list = itemListAt(ctx.text, ctx.offset);
     for (const s of list ? ITEM_SNIPPETS[list] ?? [] : []) {
       const e = expandSnippet(s.template);

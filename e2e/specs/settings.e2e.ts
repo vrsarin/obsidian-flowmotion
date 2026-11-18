@@ -197,12 +197,12 @@ describe("FlowMotion settings page", () => {
       await setting("draw.io editor");
     });
 
-    it("explains that add-ons are downloaded when turned on and deleted when turned off", async () => {
+    it("explains that Monaco is bundled and draw.io files are managed on demand", async () => {
       await openSettings();
       const item = await setting("Add-on files");
       const desc = await item.$(".setting-item-description").getText();
-      expect(desc).toContain("downloaded only when enabled");
-      expect(desc).toContain("draw.io comes from its upstream project");
+      expect(desc).toContain("code editor is bundled with FlowMotion");
+      expect(desc).toContain("draw.io files are downloaded when enabled");
       expect(desc).toContain("deleted when disabled");
     });
 
@@ -390,18 +390,18 @@ describe("FlowMotion settings page", () => {
       expect(existsSync(dir)).toBe(false);
     });
 
-    it("the Rich Code Editor is optional and CodeMirror remains the default", async () => {
+    it("the Rich Code Editor is bundled and CodeMirror remains the default", async () => {
       await openSettings();
       const rich = "Rich Code Editor (Monaco)";
       expect(await toggleIsOn(rich)).toBe(false);
       await browser.waitUntil(
         async () =>
           (await (await setting(rich)).getText()).includes(
-            "Status: not installed.",
+            "Status: installed.",
           ),
         {
           timeout: 5000,
-          timeoutMsg: 'Rich Code Editor status did not say "not installed"',
+          timeoutMsg: 'Rich Code Editor status did not say "installed"',
         },
       );
       expect((await pluginSettings()).codeEditor).toBe(false);
@@ -418,16 +418,7 @@ describe("FlowMotion settings page", () => {
       ).toBe(false);
     });
 
-    it("loads Monaco from npm package files, renders an opaque context menu, and preserves unrelated editors", async () => {
-      const base = await vaultPath();
-      const dir = join(base, ".obsidian", "plugins", "flowmotion", "monaco");
-      mkdirSync(join(dir, "min"), { recursive: true });
-      cpSync(
-        join(process.cwd(), "node_modules", "monaco-editor", "min", "vs"),
-        join(dir, "min", "vs"),
-        { recursive: true },
-      );
-
+    it("mounts bundled Monaco, renders an opaque context menu, and preserves the host AMD loader", async () => {
       await inMainWindow(async () => {
         await browser.executeObsidian(async ({ plugins }) => {
           const plugin = (
@@ -443,14 +434,11 @@ describe("FlowMotion settings page", () => {
               }
             >
           ).flowmotion!;
-          type Monaco = typeof import("monaco-editor/editor/editor.api");
-          const hostWindow = window as Window & { require?: unknown; monaco?: Monaco };
+          const hostWindow = window as Window & { require?: unknown };
           const hostRequire = hostWindow.require;
           const api = await plugin.loader.acquire();
           if (hostWindow.require !== hostRequire)
             throw new Error("Monaco replaced the host's window.require");
-          const monaco = hostWindow.monaco;
-          if (!monaco) throw new Error("Monaco did not publish its editor API");
           const host = document.body.createDiv();
           host.id = "fm-monaco-test";
           host.style.cssText =
@@ -468,25 +456,16 @@ describe("FlowMotion settings page", () => {
             },
             onChange() {},
           });
-          const foreignHost = document.body.createDiv();
-          const foreignModel = monaco.editor.createModel("unsaved text", "plaintext");
-          const foreignEditor = monaco.editor.create(foreignHost, { model: foreignModel });
-          const foreignWidget = foreignHost.createDiv({ cls: "monaco-hover" });
           host.addEventListener(
             "fm-test-dispose",
             () => {
               try {
                 plugin.loader.release();
                 host.dataset.cleanup = [
-                  foreignEditor.getModel() === foreignModel && !foreignModel.isDisposed(),
-                  foreignWidget.isConnected,
                   !host.querySelector(".monaco-editor"),
                 ].join("/");
               } finally {
                 handle.dispose();
-                foreignEditor.dispose();
-                foreignModel.dispose();
-                foreignHost.remove();
               }
             },
             { once: true },
@@ -517,7 +496,7 @@ describe("FlowMotion settings page", () => {
             host?.remove();
             return host?.dataset.cleanup;
           });
-          expect(cleanup).toBe("true/true/true");
+          expect(cleanup).toBe("true");
         }
       });
     });

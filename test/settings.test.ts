@@ -133,19 +133,15 @@ describe("settings page", () => {
     expect(saves.at(-1)).toMatchObject({ drawioEnabled: false });
   });
 
-  it("downloads the Rich Code Editor from its pinned npm package", async () => {
+  it("enables the bundled Rich Code Editor without downloading executable files", async () => {
+    vi.clearAllMocks();
     const { tab, saves } = makeTab({ ...DEFAULTS });
     tab.display();
     const row = allSettings.find(
       (x) => x.name === "Rich Code Editor (Monaco)",
     )!;
     await row.toggle!.handler(true);
-    expect(installAddon).toHaveBeenCalledWith(
-      expect.objectContaining({ dir: "monaco" }),
-      expect.any(FileSystemAdapter),
-      "/vault/.obsidian/plugins/flowmotion",
-      "1.0.2",
-    );
+    expect(installAddon).not.toHaveBeenCalled();
     expect(saves.at(-1)).toMatchObject({ codeEditor: true });
   });
 

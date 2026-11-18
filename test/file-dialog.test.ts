@@ -4,59 +4,41 @@ import { TFile } from "obsidian";
 import { chooseDiagramFile } from "../src/obsidian/file-dialog";
 
 describe("diagram file picker", () => {
-  it("enumerates .flow files once, reuses the list while filtering, and selects the current vault file", async () => {
+  it("resolves an entered vault path without enumerating files", async () => {
     const file = Object.assign(new TFile(), {
       path: "diagrams/architecture.flow",
       extension: "flow",
       basename: "architecture",
     });
-    const getFiles = vi.fn(() => [file]);
     const getAbstractFileByPath = vi.fn(() => file);
+    const getFiles = vi.fn(() => [file]);
+    const getAllLoadedFiles = vi.fn(() => [file]);
     const app = {
-      vault: { getFiles, getAllLoadedFiles: () => [], getAbstractFileByPath },
+      vault: { getFiles, getAllLoadedFiles, getAbstractFileByPath },
     };
 
     const choice = chooseDiagramFile(app as never, "/");
-
-    expect(getFiles).toHaveBeenCalledTimes(1);
-    const filter = document.querySelector<HTMLInputElement>(".fm-pick-filter")!;
-    filter.value = "architecture";
-    filter.dispatchEvent(new Event("input"));
-    expect(getFiles).toHaveBeenCalledTimes(1);
-    document.querySelector<HTMLElement>(".fm-pick-file")!.click();
+    const input = document.querySelector<HTMLInputElement>(".fm-existing-path")!;
+    input.value = file.path;
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
 
     await expect(choice).resolves.toEqual({ kind: "existing", file });
     expect(getAbstractFileByPath).toHaveBeenCalledWith(file.path);
+    expect(getFiles).not.toHaveBeenCalled();
+    expect(getAllLoadedFiles).not.toHaveBeenCalled();
   });
 
-  it("removes cached files that no longer exist or are no longer .flow files", () => {
-    const file = Object.assign(new TFile(), {
-      path: "diagrams/architecture.flow",
-      extension: "flow",
-      basename: "architecture",
-    });
-    const noLongerFlow = Object.assign(new TFile(), {
-      path: file.path,
-      extension: "md",
-    });
+  it("rejects paths that do not resolve to a .flow file", () => {
+    const getAbstractFileByPath = vi.fn(() => null);
+    const app = { vault: { getAbstractFileByPath } };
 
-    for (const currentFile of [null, noLongerFlow]) {
-      document.body.replaceChildren();
-      const getFiles = vi.fn(() => [file]);
-      const getAbstractFileByPath = vi.fn(() => currentFile);
-      const app = {
-        vault: { getFiles, getAllLoadedFiles: () => [], getAbstractFileByPath },
-      };
+    void chooseDiagramFile(app as never, "/");
+    const input = document.querySelector<HTMLInputElement>(".fm-existing-path")!;
+    input.value = "missing.flow";
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
 
-      void chooseDiagramFile(app as never, "/");
-      document.querySelector<HTMLElement>(".fm-pick-file")!.click();
-
-      expect(getFiles).toHaveBeenCalledTimes(1);
-      expect(getAbstractFileByPath).toHaveBeenCalledWith(file.path);
-      expect(document.querySelector(".fm-pick-file")).toBeNull();
-      expect(document.querySelector(".fm-pick-empty")?.textContent).toBe(
-        "No matching .flow files.",
-      );
-    }
+    expect(document.querySelector(".mod-warning")?.textContent).toBe(
+      "Enter the path of an existing .flow file.",
+    );
   });
 });
