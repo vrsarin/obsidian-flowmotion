@@ -1,6 +1,9 @@
 name: Repository scorecard
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
@@ -28,7 +31,7 @@ jobs:
         with:
           results_file: results.sarif
           results_format: sarif
-          publish_results: true
+          publish_results: ${{ github.event_name != 'pull_request' }}
 
       - name: Upload Scorecard results
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3

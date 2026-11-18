@@ -6,9 +6,7 @@ Only the latest released version of FlowMotion gets security fixes.
 
 ## Report a vulnerability
 
-Do not open a public issue for a security problem.
-
-Report it privately through GitHub: open the repository's **Security** tab, then choose **Report a vulnerability**. Include:
+Report it privately through [the repository's Security tab](https://github.com/vrsarin/obsidian-flowmotion/security), then choose **Report a vulnerability**. Do not open a public issue for a security problem. Include:
 
 - The FlowMotion version.
 - The steps to reproduce the problem, and a sample diagram if one is needed.
