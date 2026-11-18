@@ -1,7 +1,7 @@
 import { TFile, type App } from "obsidian";
 import { yaml } from "@codemirror/lang-yaml";
 import { syntaxHighlighting } from "@codemirror/language";
-import { history, historyKeymap, defaultKeymap } from "@codemirror/commands";
+import { history, historyKeymap, defaultKeymap, isolateHistory } from "@codemirror/commands";
 import { EditorState } from "@codemirror/state";
 import { classHighlighter } from "@lezer/highlight";
 import {
@@ -71,20 +71,23 @@ export class EditorPane {
   /** Rewrite the definition in canonical layout (also Shift+Alt+F inside the editor). */
   format() {
     if (this.handle) this.handle.format();
-    else {
-      const formatted = formatSource(this.getValue());
-      if (formatted !== undefined) this.set(formatted);
+    else if (this.cm) {
+      const current = this.cm.state.doc.toString();
+      const formatted = formatSource(current);
+      if (formatted !== undefined && formatted !== current)
+        this.cm.dispatch({
+          changes: { from: 0, to: current.length, insert: formatted },
+          annotations: isolateHistory.of("full"),
+        });
     }
   }
 
-  /** Replace the content (also used for the first load). */
+  /** Load a document without retaining edits from the previous file. */
   set(text: string) {
     this.text = text;
+    window.clearTimeout(this.timer);
     if (this.handle) this.handle.setValue(text);
-    else if (this.cm && this.cm.state.doc.toString() !== text)
-      this.cm.dispatch({
-        changes: { from: 0, to: this.cm.state.doc.length, insert: text },
-      });
+    else if (this.cm) this.cm.setState(this.codeMirrorState(text));
     else void this.start();
     void this.renderPreview();
   }
@@ -161,37 +164,51 @@ export class EditorPane {
     })());
   }
 
-  /** CodeMirror is available in Obsidian and is the offline, low-fidelity default editor. */
+  private codeMirrorState(doc: string) {
+    return EditorState.create({
+      doc,
+      extensions: [
+        history(),
+        keymap.of([
+          {
+            any: (_view, event) => {
+              // Option can change event.key on macOS, so match the physical F key.
+              if (event.code !== "KeyF" || !event.shiftKey || !event.altKey ||
+                  event.ctrlKey || event.metaKey || event.isComposing) return false;
+              this.format();
+              return true;
+            },
+          },
+          ...defaultKeymap,
+          ...historyKeymap,
+        ]),
+        yaml(),
+        syntaxHighlighting(classHighlighter),
+        lineNumbers(),
+        highlightActiveLineGutter(),
+        highlightActiveLine(),
+        EditorView.lineWrapping,
+        EditorView.contentAttributes.of({
+          "aria-label": "Diagram source",
+          spellcheck: "false",
+        }),
+        EditorView.updateListener.of((update) => {
+          if (!update.docChanged) return;
+          this.text = update.state.doc.toString();
+          this.o.onChange(this.text);
+          this.schedulePreview();
+        }),
+      ],
+    });
+  }
+
   private startCodeMirror(message?: string) {
     this.host.empty();
     if (message) this.host.createDiv({ cls: "fm-flow-note", text: message });
-    const view = new EditorView({
-      state: EditorState.create({
-        doc: this.text,
-        extensions: [
-          history(),
-          keymap.of([...defaultKeymap, ...historyKeymap]),
-          yaml(),
-          syntaxHighlighting(classHighlighter),
-          lineNumbers(),
-          highlightActiveLineGutter(),
-          highlightActiveLine(),
-          EditorView.lineWrapping,
-          EditorView.contentAttributes.of({
-            "aria-label": "Diagram source",
-            spellcheck: "false",
-          }),
-          EditorView.updateListener.of((update) => {
-            if (!update.docChanged) return;
-            this.text = update.state.doc.toString();
-            this.o.onChange(this.text);
-            this.schedulePreview();
-          }),
-        ],
-      }),
+    this.cm = new EditorView({
+      state: this.codeMirrorState(this.text),
       parent: this.host,
     });
-    this.cm = view;
   }
 
   private schedulePreview() {

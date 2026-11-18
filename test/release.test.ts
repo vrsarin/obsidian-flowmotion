@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs script without types
 import { checkRelease } from "../scripts/check-release.mjs";
-// @ts-expect-error plain .mjs script without types
 import {
   assertMainBundleSize,
   MAIN_JS_MAX_BYTES,

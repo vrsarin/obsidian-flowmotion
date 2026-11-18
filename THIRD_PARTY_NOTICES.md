@@ -8,6 +8,6 @@ FlowMotion uses the following third-party software. draw.io is downloaded from t
 | Monaco Editor          | Optional Rich Code Editor (downloaded into `monaco/`)     | MIT                |
 | CodeMirror commands    | Undo, redo and editor key bindings (bundled in `main.js`) | MIT                |
 
-The plugin's bundled dependencies are `yaml` (ISC), `elkjs` (Eclipse Public License 2.0) and `@codemirror/commands` (MIT). The optional Monaco add-on uses `monaco-editor` (MIT). See `package.json` for the full list.
+The plugin bundles `yaml` (ISC), `elkjs` (Eclipse Public License 2.0), and MIT-licensed CodeMirror commands and YAML syntax support. The release includes Monaco's CSS in `styles.css`, but not its JavaScript runtime. See `package.json` for the full dependency list.
 
 Obsidian's API, `@codemirror/state`, and `@codemirror/view` are provided by Obsidian at runtime and are not bundled.

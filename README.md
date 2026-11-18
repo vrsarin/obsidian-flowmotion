@@ -90,12 +90,14 @@ FlowMotion works out of the box. The optional draw.io editor is downloaded from 
 - **draw.io editor** for `.drawio.flow` files, downloaded as the current `draw.war` from the [draw.io GitHub releases](https://github.com/jgraph/drawio/releases) (about 42 MB installed).
   To use it, open FlowMotion settings and turn it on. FlowMotion downloads it into the plugin folder (a network connection is needed once). Turn it off to delete the files. It works on the desktop app only.
 
-FlowMotion uses Obsidian's CodeMirror editor by default, with a live preview. For richer editing, enable **Rich Code Editor (Monaco)** in settings; it downloads the pinned Monaco Editor npm package only when you turn it on. The default editor works offline and on mobile. draw.io and Monaco are licensed under Apache-2.0 and MIT; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+FlowMotion uses CodeMirror for `.flow` files and the diagram edit window. It includes YAML syntax highlighting, line numbers, a live preview, and formatting with **Shift+Alt+F**. It works offline and on mobile without an add-on.
+
+On desktop, enable **Settings → FlowMotion → Rich Code Editor (Monaco)** for completion, hover help, and navigation. The first enable downloads the pinned package published by the [Monaco Editor project](https://github.com/microsoft/monaco-editor) to npm. Reopen the diagram after installation. Monaco works offline after installation. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for licenses.
 
 ## Data access
 
 - Opening the diagram picker enumerates `.flow` files; it enumerates vault folders when showing the new-file destination list. Filtering the picker uses that opening-time file list. Path completion searches vault file names for `.flow`, YAML, and JSON files only when completing a `src:` path.
-- The optional bundled Monaco code editor includes clipboard support for editing and clipboard-aware suggestions. FlowMotion does not call the clipboard API directly.
+- The optional Monaco add-on includes clipboard support for editing and clipboard-aware suggestions. FlowMotion does not call the clipboard API directly.
 - The optional draw.io editor is downloaded into the plugin folder through the vault adapter. A local server bound to `127.0.0.1` serves those files to the editor.
 
 ## Advanced
@@ -104,7 +106,7 @@ See the wiki for [reusing diagram files](https://github.com/vrsarin/obsidian-flo
 
 ## Status
 
-FlowMotion is version 0.1.0. Automated tests cover the drawing engine and selected Obsidian desktop workflows, including loading, SVG rendering, settings, and restart persistence. Mobile use and full optional-editor workflows still need manual checks. Test it in a copy of your vault first. See [Known limitations](https://github.com/vrsarin/obsidian-flowmotion/wiki/Known-Limitations).
+See [CHANGELOG.md](CHANGELOG.md) for version history. Automated tests cover the drawing engine and selected Obsidian desktop workflows, including loading, SVG rendering, settings, and restart persistence. Mobile use and full optional-editor workflows still need manual checks. Test it in a copy of your vault first. See [Known limitations](https://github.com/vrsarin/obsidian-flowmotion/wiki/Known-Limitations).
 
 ## Contributing
 

@@ -418,7 +418,7 @@ describe("FlowMotion settings page", () => {
       ).toBe(false);
     });
 
-    it("loads Monaco from npm package files and renders an opaque context menu", async () => {
+    it("loads Monaco from npm package files, renders an opaque context menu, and preserves unrelated editors", async () => {
       const base = await vaultPath();
       const dir = join(base, ".obsidian", "plugins", "flowmotion", "monaco");
       mkdirSync(join(dir, "min"), { recursive: true });
@@ -461,12 +461,33 @@ describe("FlowMotion settings page", () => {
             },
             onChange() {},
           });
+          type Monaco = typeof import("monaco-editor/editor/editor.api");
+          const amdRequire = (window as Window & {
+            require: (modules: string[], ready: (monaco: Monaco) => void, fail: (error: Error) => void) => void;
+          }).require;
+          const monaco = await new Promise<Monaco>((resolve, reject) =>
+            amdRequire(["vs/editor/editor.main"], resolve, reject),
+          );
+          const foreignHost = document.body.createDiv();
+          const foreignModel = monaco.editor.createModel("unsaved text", "plaintext");
+          const foreignEditor = monaco.editor.create(foreignHost, { model: foreignModel });
+          const foreignWidget = foreignHost.createDiv({ cls: "monaco-hover" });
           host.addEventListener(
             "fm-test-dispose",
             () => {
-              handle.dispose();
-              host.remove();
-              plugin.loader.release();
+              try {
+                plugin.loader.release();
+                host.dataset.cleanup = [
+                  foreignEditor.getModel() === foreignModel && !foreignModel.isDisposed(),
+                  foreignWidget.isConnected,
+                  !host.querySelector(".monaco-editor"),
+                ].join("/");
+              } finally {
+                handle.dispose();
+                foreignEditor.dispose();
+                foreignModel.dispose();
+                foreignHost.remove();
+              }
             },
             { once: true },
           );
@@ -490,11 +511,13 @@ describe("FlowMotion settings page", () => {
           });
           expect(colors).toBe("rgb(37, 37, 37) / rgb(238, 238, 238)");
         } finally {
-          await browser.executeObsidian(() => {
-            document
-              .getElementById("fm-monaco-test")
-              ?.dispatchEvent(new Event("fm-test-dispose"));
+          const cleanup = await browser.executeObsidian(() => {
+            const host = document.getElementById("fm-monaco-test");
+            host?.dispatchEvent(new Event("fm-test-dispose"));
+            host?.remove();
+            return host?.dataset.cleanup;
           });
+          expect(cleanup).toBe("true/true/true");
         }
       });
     });

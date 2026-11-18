@@ -39,7 +39,7 @@ const fileExistsFor = new WeakMap<monaco.editor.ITextModel, MountOptions['fileEx
 
 /** Language features backed by the shared schema engine; registered once while any editor is open. */
 let providers: monaco.IDisposable[] = [];
-let users = 0;
+const handles = new Set<Handle>();
 function registerProviders() {
   const L = mo.languages;
   if (!L.getLanguages().some((l) => l.id === LANG)) {
@@ -171,7 +171,7 @@ function validate(model: monaco.editor.ITextModel) {
 
 let seq = 0;
 export function mount(host: HTMLElement, opts: MountOptions): Handle {
-  if (users++ === 0) registerProviders();
+  if (handles.size === 0) registerProviders();
   const c = opts.colors;
   const theme = `fm-${opts.dark ? 'dark' : 'light'}`;
   mo.editor.defineTheme(theme, {
@@ -193,32 +193,38 @@ export function mount(host: HTMLElement, opts: MountOptions): Handle {
     links: false, fixedOverflowWidgets: false, padding: { top: 8 }, smoothScrolling: true, bracketPairColorization: { enabled: true },
   });
   let timer = 0;
+  let loading = false;
   const sub = model.onDidChangeContent(() => {
-    opts.onChange(model.getValue());
+    if (!loading) opts.onChange(model.getValue());
     window.clearTimeout(timer);
     timer = window.setTimeout(() => validate(model), 250);
   });
   validate(model);
-  return {
+  const handle: Handle = {
     getValue: () => model.getValue(),
-    setValue: (v) => { if (v !== model.getValue()) model.setValue(v); },
+    setValue(v) {
+      loading = true;
+      try { model.setValue(v); }
+      finally { loading = false; }
+    },
     focus: () => editor.focus(),
     layout: () => editor.layout(),
     format: () => void editor.getAction('editor.action.formatDocument')?.run(),
     dispose() {
+      if (!handles.delete(handle)) return;
       window.clearTimeout(timer);
       sub.dispose();
       mo.editor.setModelMarkers(model, OWNER, []);
       editor.dispose();
       model.dispose();
-      if (--users === 0) { providers.forEach((p) => p.dispose()); providers = []; }
+      if (handles.size === 0) { providers.forEach((p) => p.dispose()); providers = []; }
     },
   };
+  handles.add(handle);
+  return handle;
 }
 
-/** Drop everything Monaco created globally so the bundle can be garbage-collected. */
+/** Dispose FlowMotion's editors without touching other users of the Monaco runtime. */
 export function purge() {
-  providers.forEach((p) => p.dispose()); providers = []; users = 0;
-  mo.editor.getModels().forEach((m) => m.dispose());
-  mo.editor.getEditors().forEach((e) => e.dispose());
+  for (const handle of handles) handle.dispose();
 }

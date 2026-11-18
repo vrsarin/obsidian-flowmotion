@@ -65,17 +65,18 @@ export class MonacoLoader {
   private async load(): Promise<MonacoApi> {
     if (!Platform.isDesktopApp)
       throw new Error("the code editor works on the desktop app only");
-    const url = await this.server.url();
     const amdWindow = activeWindow as MonacoWindow;
+    const doc = amdWindow.document;
+    const url = await this.server.url();
     if (!amdWindow.require?.config) {
-      const script = activeDocument.createElement("script");
+      const script = doc.createElement("script");
       script.src = `${url}/min/vs/loader.js`;
       try {
         await new Promise<void>((resolve, reject) => {
           script.onload = () => resolve();
           script.onerror = () =>
             reject(new Error("the Monaco AMD loader script could not be loaded"));
-          activeDocument.head.appendChild(script);
+          doc.head.appendChild(script);
         });
       } catch (e) {
         script.remove();
@@ -83,7 +84,7 @@ export class MonacoLoader {
       }
     }
 
-    const amdRequire = (activeWindow as MonacoWindow).require;
+    const amdRequire = amdWindow.require;
     if (!amdRequire?.config)
       throw new Error("the Monaco AMD loader did not initialize");
     amdRequire.config({
@@ -108,13 +109,6 @@ export class MonacoLoader {
     this.api?.purge();
     this.api = undefined;
     this.loading = undefined;
-    // Monaco's AMD modules and global loader stay available for later use.
-    // Widgets Monaco attaches to <body> (menus, hovers, aria live regions).
-    activeDocument.body
-      .querySelectorAll(
-        ":scope > .monaco-aria-container, :scope > .context-view, :scope > .monaco-menu-container, :scope > .shadow-root-host, :scope > .monaco-hover",
-      )
-      .forEach((n) => n.remove());
   }
 
   /** For plugin unload. */
