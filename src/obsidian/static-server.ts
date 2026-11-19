@@ -40,6 +40,7 @@ export class StaticServer {
   private start(): Promise<string> {
     const base = this.root();
     return new Promise((resolve, reject) => {
+      // deepcode ignore HttpToHttps: loopback-only (127.0.0.1) server; draw.io needs an http origin and no traffic leaves the machine.
       const srv = http.createServer((req, res) => {
         const fail = (code: number) => {
           res.writeHead(code, { "content-type": "text/plain" });

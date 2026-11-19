@@ -1,0 +1,8 @@
+version: v1.25.0
+ignore: {}
+# Dev-only CLI helpers (user-supplied paths by design) and tests are not shipped in the plugin.
+exclude:
+  code:
+    - test/**
+    - scripts/**
+patch: {}

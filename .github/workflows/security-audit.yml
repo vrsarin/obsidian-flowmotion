@@ -1,0 +1,173 @@
+name: Security checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main,"release/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: ESLint and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+  semgrep:
+    name: Semgrep
+    runs-on: ubuntu-latest
+    environment: prod
+    container:
+      image: semgrep/semgrep:1.186.0
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    env:
+      SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Scan with Semgrep AppSec Platform
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && env.SEMGREP_APP_TOKEN != ''
+        run: semgrep ci --no-suppress-errors
+      - name: Scan without Semgrep AppSec Platform credentials
+        if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) || env.SEMGREP_APP_TOKEN == ''
+        run: semgrep scan --config p/security-audit --error --sarif --output semgrep.sarif
+      - name: Publish Semgrep findings to GitHub Code scanning
+        if: always() && hashFiles('semgrep.sarif') != ''
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  snyk:
+    name: Snyk
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Scan dependencies and source
+        id: snyk-oss
+        continue-on-error: true
+        uses: snyk/actions/node@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --all-projects --severity-threshold=medium --sarif-file-output=snyk.sarif
+      - name: Scan source code
+        id: snyk-code
+        continue-on-error: true
+        uses: snyk/actions/node@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: code
+          args: test --severity-threshold=medium --sarif-file-output=snyk-code.sarif
+      - name: Publish Snyk findings to GitHub Code scanning
+        if: always() && hashFiles('snyk.sarif') != ''
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: snyk.sarif
+          category: snyk
+      - name: Publish Snyk Code findings to GitHub Code scanning
+        if: always() && hashFiles('snyk-code.sarif') != ''
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: snyk-code.sarif
+          category: snyk-code
+      - name: Enforce Snyk scan result
+        if: always()
+        env:
+          OSS_OUTCOME: ${{ steps.snyk-oss.outcome }}
+          CODE_OUTCOME: ${{ steps.snyk-code.outcome }}
+        run: |
+          if [ "$OSS_OUTCOME" != "success" ] || [ "$CODE_OUTCOME" != "success" ]; then
+            echo "Snyk reported findings or the scan failed. Review the Snyk job and uploaded SARIF results."
+            exit 1
+          fi
+
+  sonarcloud:
+    name: SonarCloud
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: npm run test:coverage
+      - name: Analyze with SonarCloud
+        uses: SonarSource/sonarqube-scan-action@59202af334b4ba7b5db01b701b8e79f8b3bef0f4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >-
+            -Dsonar.projectKey=vrsarin_obsidian-flowmotion
+            -Dsonar.organization=vrsarin
+            -Dsonar.sources=src
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+            -Dsonar.coverage.exclusions=**/*.d.ts,**/*.d.mts
+            -Dsonar.qualitygate.wait=true
+
+  security-gate:
+    name: Security gate
+    if: always()
+    needs: [lint, semgrep, snyk, sonarcloud]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require blocking checks to pass
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          SEMGREP_RESULT: ${{ needs.semgrep.result }}
+          SNYK_RESULT: ${{ needs.snyk.result }}
+          SONAR_RESULT: ${{ needs.sonarcloud.result }}
+          IS_FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+        run: |
+          if [ "$LINT_RESULT" != "success" ] || [ "$SEMGREP_RESULT" != "success" ]; then
+            echo "Build, tests, typecheck, or Semgrep failed. Fix findings before merging."
+            exit 1
+          fi
+          if [ "$IS_FORK_PR" != "true" ] && { [ "$SNYK_RESULT" != "success" ] || [ "$SONAR_RESULT" != "success" ]; }; then
+            echo "Snyk or SonarCloud failed. Fix findings or scanner configuration before merging."
+            exit 1
+          fi
