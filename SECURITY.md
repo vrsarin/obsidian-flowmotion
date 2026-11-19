@@ -22,7 +22,7 @@ FlowMotion runs in Obsidian and does not send data over the network. The optiona
 
 The maintainer preparing the next release owns triage and remediation. If no release owner is assigned, the repository maintainer is responsible. Use the severity reported by Snyk or GitHub; resolve disagreements at the higher severity until reviewed.
 
-On protected `main` and `release/**` branches, the required **Security gate** blocks pull requests when Snyk reports medium-or-higher findings on same-repository pull requests, or when Dependency Review finds a moderate-or-higher vulnerable dependency change. Dependency Review also runs on public-fork pull requests without repository secrets. Snyk credentials are not exposed to forks. The workflow also runs on `hotfix/**`, but that branch pattern does not currently have a ruleset requiring the gate.
+On protected `main` and `release/**` branches, the required **Security gate** blocks pull requests when Snyk reports medium-or-higher findings on same-repository pull requests or when `npm audit` finds a moderate-or-higher vulnerable dependency. Snyk scans development dependencies as well as production dependencies. GitHub Dependency Review shows package changes in pull requests, and the secretless npm audit check covers public-fork pull requests. Snyk credentials are not exposed to forks. The workflow also runs on `hotfix/**`, but that branch pattern does not currently have a ruleset requiring the gate.
 
 | Severity | Triage target | Remediation target |
 | --- | --- | --- |
@@ -35,7 +35,7 @@ Temporary exceptions require maintainer approval and a tracking pull request or 
 
 ### Safe validation
 
-To exercise the dependency policy, use a temporary branch and draft pull request; never merge it. Add a package version with a currently known moderate-or-higher advisory, then confirm that Dependency Review fails and the required **Security gate** fails. For a same-repository pull request with `SNYK_TOKEN` configured, also confirm that the Snyk scan reports the finding. Update to a fixed version, confirm the checks pass, and close the draft pull request. CI uses `npm ci --ignore-scripts`; do not run the vulnerable package or its scripts locally.
+To exercise the dependency policy, use a temporary branch and draft pull request; never merge it. Add a package version with a currently known moderate-or-higher advisory, then confirm that `npm audit` and the required **Security gate** fail. For a same-repository pull request with `SNYK_TOKEN` configured, also confirm that Snyk reports the finding. Update or remove the vulnerable dependency, confirm the checks pass, and close the draft pull request. CI uses `npm ci --ignore-scripts`; do not run the vulnerable package or its scripts locally.
 
 ## Malicious package coverage
 

@@ -82,7 +82,7 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          args: --all-projects --severity-threshold=medium --sarif-file-output=snyk.sarif
+          args: --all-projects --dev --severity-threshold=medium --sarif-file-output=snyk.sarif
       - name: Scan source code
         id: snyk-code
         continue-on-error: true
