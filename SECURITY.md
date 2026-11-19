@@ -24,12 +24,14 @@ The maintainer preparing the next release owns triage and remediation. If no rel
 
 On protected `main` and `release/**` branches, the required **Security gate** blocks pull requests when Snyk reports medium-or-higher findings on same-repository pull requests, or when `npm audit` finds a moderate-or-higher issue in the complete dependency lockfile. The audit runs without secrets, including on public-fork pull requests; Dependency Review provides context about package changes. Credentialed Snyk scans include production and development dependencies, and Snyk credentials are not exposed to forks. The workflow also runs on `hotfix/**`, but that branch pattern does not currently have a ruleset requiring the gate.
 
-| Severity | Triage target | Remediation target |
-| --- | --- | --- |
-| Critical | Within 1 business day | Block release; fix or mitigate immediately and before release |
-| High | Within 2 business days | Block release; fix within 7 calendar days and before release |
-| Medium | Within 5 business days | Fix within 30 calendar days or before the next release, whichever comes first |
-| Low | During the next weekly dependency review | Schedule with routine maintenance |
+For a release tag, the release workflow runs the security checks on the tagged commit before building and publishing assets. Lint, build, typecheck, tests, Semgrep, Snyk, SonarCloud, and the full lockfile audit must succeed; a failed, cancelled, or missing result blocks publication. Dependency Review applies to pull requests, not tags. Tag scans do not upload SARIF to GitHub code scanning. Malware and generated-bundle suspicious-code scanning are not yet release gates.
+
+| Severity | Triage target                            | Remediation target                                                            |
+| -------- | ---------------------------------------- | ----------------------------------------------------------------------------- |
+| Critical | Within 1 business day                    | Block release; fix or mitigate immediately and before release                 |
+| High     | Within 2 business days                   | Block release; fix within 7 calendar days and before release                  |
+| Medium   | Within 5 business days                   | Fix within 30 calendar days or before the next release, whichever comes first |
+| Low      | During the next weekly dependency review | Schedule with routine maintenance                                             |
 
 Temporary exceptions require maintainer approval and a tracking pull request or issue with the affected package/advisory, rationale, mitigation, owner, and review/expiry date. Exceptions expire within 30 calendar days and must be fixed, re-approved, or withdrawn by then. Keep details of an unpatched FlowMotion vulnerability in a private Security Advisory.
 
