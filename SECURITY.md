@@ -22,7 +22,7 @@ FlowMotion runs in Obsidian and does not send data over the network. The optiona
 
 The maintainer preparing the next release owns triage and remediation. If no release owner is assigned, the repository maintainer is responsible. Use the severity reported by Snyk or GitHub; resolve disagreements at the higher severity until reviewed.
 
-On protected `main` and `release/**` branches, the required **Security gate** blocks pull requests when Snyk reports medium-or-higher findings on same-repository pull requests or when `npm audit` finds a moderate-or-higher vulnerable dependency. Snyk scans development dependencies as well as production dependencies. GitHub Dependency Review shows package changes in pull requests, and the secretless npm audit check covers public-fork pull requests. Snyk credentials are not exposed to forks. The workflow also runs on `hotfix/**`, but that branch pattern does not currently have a ruleset requiring the gate.
+On protected `main` and `release/**` branches, the required **Security gate** blocks pull requests when Snyk reports medium-or-higher findings on same-repository pull requests or when `npm audit` finds a moderate-or-higher vulnerable dependency. Snyk scans production dependencies; `npm audit` checks the complete dependency lockfile, including development dependencies. GitHub Dependency Review shows package changes in pull requests, and the secretless npm audit check covers public-fork pull requests. Snyk credentials are not exposed to forks. The workflow also runs on `hotfix/**`, but that branch pattern does not currently have a ruleset requiring the gate.
 
 | Severity | Triage target | Remediation target |
 | --- | --- | --- |
@@ -33,7 +33,7 @@ On protected `main` and `release/**` branches, the required **Security gate** bl
 
 Temporary exceptions require maintainer approval and a tracking pull request or issue with the affected package/advisory, rationale, mitigation, owner, and review/expiry date. Exceptions expire within 30 calendar days and must be fixed, re-approved, or withdrawn by then. Keep details of an unpatched FlowMotion vulnerability in a private Security Advisory.
 
-The current time-limited exception covers three Snyk advisories for `uri-js@4.4.1` (`SNYK-JS-URIJS-19963961`, `SNYK-JS-URIJS-19963963`, and `SNYK-JS-URIJS-20341609`). Snyk reports no fixed release; the affected dependency paths are development-only and are not shipped with the plugin. Maintainer @vrsarin owns the review, due by 2026-12-19. The `.snyk` policy expires these ignores on that date.
+A validation-only Snyk scan that included development dependencies found three advisories in `uri-js@4.4.1` (`SNYK-JS-URIJS-19963961`, `SNYK-JS-URIJS-19963963`, and `SNYK-JS-URIJS-20341609`). Snyk reports no fixed release, and the current lockfile includes `uri-js` only in development dependencies. These advisories are not ignored in `.snyk`; Snyk remains production-only, while `npm audit` continues to check the full lockfile.
 
 ### Safe validation
 
