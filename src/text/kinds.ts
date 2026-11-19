@@ -162,7 +162,7 @@ function activity(lines: [string, number][], b: Builder) {
       continue;
     }
     if (/^repeat\s*$/i.test(t)) { const id = b.fresh('r'); b.node(id, '', 'circle', grp()); b.nodes.get(id)!.label = ' '; attach(id); stack.push({ kind: 'repeat', top: id }); continue; }
-    m = /^repeat\s*while\s*\((.*?)\)\s*(?:is\s*\((.*)\))?\s*(?:not\s*\((.*)\))?$/i.exec(t);
+    m = /^repeat\s*while\s*\((.*?)\)(?:\s*is\s*\((.*)\))?(?:\s*not\s*\((.*)\))?$/i.exec(t);
     if (m) {
       const top = stack.pop();
       if (top?.kind !== 'repeat') { b.bad(ln, '"repeat while" without "repeat".'); continue; }
@@ -232,14 +232,14 @@ function state(lines: [string, number][], b: Builder) {
   for (const [s, ln] of lines) {
     if (!s || s.startsWith("'") || /^(direction|skinparam|hide|title|scale|note|end note)\b/i.test(s)) continue;
     let m: RegExpExecArray | null;
-    m = /^state\s+"([^"]*)"\s+as\s+(\w+)\s*(?:<<(\w+)>>)?\s*(\{)?$/i.exec(s);
+    m = /^state\s+"([^"]*)"\s+as\s+(\w+)(?:\s*<<(\w+)>>)?\s*(\{)?$/i.exec(s);
     if (m) {
       alias.set(m[2]!, m[2]!);
       if (m[4]) { b.group(m[2]!, clean(m[1]!), cur()); scope.push(m[2]!); }
       else b.node(m[2]!, clean(m[1]!), m[3] ? stereo(m[3]) : 'round', cur());
       continue;
     }
-    m = /^state\s+(\w+)\s*(?:<<(\w+)>>)?\s*(\{)?$/i.exec(s);
+    m = /^state\s+(\w+)(?:\s*<<(\w+)>>)?\s*(\{)?$/i.exec(s);
     if (m) {
       if (m[3]) { b.group(m[1]!, m[1]!.replaceAll('_', ' '), cur()); scope.push(m[1]!); }
       else b.node(m[1]!, m[2] ? '' : m[1]!.replaceAll('_', ' '), m[2] ? stereo(m[2]) : 'round', cur());
@@ -316,7 +316,7 @@ function classes(lines: [string, number][], b: Builder) {
       else member(open, s);
       continue;
     }
-    m = /^(?:(abstract|interface|enum)\s+)?class\s+(\w+)(?:\s*<<(\w+)>>)?\s*(\{)?\s*(?:\{)?$/i.exec(s) ?? /^(interface|abstract class|abstract|enum)\s+(\w+)\s*(\{)?$/i.exec(s);
+    m = /^(?:(abstract|interface|enum)\s+)?class\s+(\w+)(?:\s*<<(\w+)>>)?\s*(\{)?(?:\s*\{)?$/i.exec(s) ?? /^(interface|abstract class|abstract|enum)\s+(\w+)\s*(\{)?$/i.exec(s);
     if (m) {
       const kind = (m[1] && /interface|enum|abstract/i.test(m[1]) ? m[1] : /^(\S+)/.exec(s)![1]!).replace(/\s*class/i, '').toLowerCase();
       const n = cls(m[2]!);
@@ -405,8 +405,9 @@ function mindmap(lines: [string, number][], b: Builder, plant: boolean) {
     const t0 = raw.replaceAll('\t', '  ');
     if (!t0.trim() || t0.trim().startsWith('%%') || t0.trim().startsWith("'")) continue;
     let depth: number, text: string;
-    const pm = plant ? /^([*+-]+)(?:\[#\w+\])?\s*_?(.*)$/.exec(t0.trim()) : null;
-    if (pm) { depth = pm[1]!.length - 1; text = pm[2]!.trimStart(); }
+    const pm = plant ? /^([*+-]+)(?:\[#\w+\])?(.*)$/.exec(t0.trim()) : null;
+    if (pm) { depth = pm[1]!.length - 1; const body = pm[2]!.trimStart();
+      text = (body.startsWith('_') ? body.slice(1) : body).trimStart(); }
     else { depth = Math.floor((/^ */.exec(t0)![0]).length / 2); text = t0.trim(); }
     // Mermaid shape wrappers: id((text)), id(text), id[text], ::icon lines
     if (text.startsWith('::')) continue;
@@ -531,7 +532,7 @@ function gantt(lines: [string, number][], b: Builder, plant: boolean): GanttDef 
       if (m[1]) { const prev = specs[specs.indexOf(t) - 1]; if (prev) t.after = [prev.id]; }
       if (/^(?:is|are)\s/i.test(rest)) continue; // colour, completion, deleted: cosmetic
       if (/^as\s/i.test(rest)) continue;
-      for (const clause of rest.split(/\s+and\s+/i)) plantClause(clause, t, task, b, ln);
+      for (const clause of rest.split(/\sand\s/i)) plantClause(clause.trim(), t, task, b, ln);
       continue;
     }
     b.bad(ln, `Unrecognised Gantt statement "${s.slice(0, 40)}".`);
@@ -692,8 +693,8 @@ function component(lines: [string, number][], b: Builder, mermaid: boolean) {
       continue;
     }
     // PlantUML component / deployment
-    m = /^(\w+)\s+("[^"]*"|\[[^\]]+\]|[^\s{]+)(.*)$/.exec(s);
-    const tail = m ? /^(?:\s+as\s+("[^"]*"|\S+))?(?:\s*<<[^>]*>>)?\s*(\{)?$/.exec(m[3]!) : null;
+    m = /^(\w+)\s+("[^"]*"|\[[^\]]+\]|[^\s{]+)((?:[\s{].*)?)$/.exec(s);
+    const tail = m ? /^(?:\s+as\s+("[^"]*"|[^\s{]+))?\s*(\{)?$/.exec(m[3]!.replace(/<<[^>]*>>/, '')) : null;
     if (m && tail && /^(component|node|cloud|package|rectangle|folder|frame|database|storage|artifact|queue|interface|actor|usecase|agent|card|boundary|control|entity|collections|namespace)$/i.test(m[1]!)) {
       const [, kw, a] = m;
       const [, bAs, open] = tail;
@@ -736,13 +737,13 @@ export function sniffKind(source: string): Kind | undefined {
   if (/^mindmap\b/i.test(first) || /^@startmindmap\b/i.test(first)) return 'mindmap';
   if (/^@start(?:uml)?\b/i.test(first) && /^@startuml/i.test(first)) {
     const body = rows.filter((r) => r && !r.startsWith("'") && !/^@(?:start|end)uml/i.test(r));
-    if (body.some((r) => /^(start|stop|end|if\s*\(|while\s*\(|repeat\b|fork\b|partition\b|:.*;?\s*$)/i.test(r) && !/^end\s+(?:note|fork)/i.test(r)) && !body.some((r) => /(?:^(?:participant|actor|class|state|entity)\b|->)/.test(r) && !r.startsWith('->'))) return 'activity';
+    if (body.some((r) => /^(start|stop|end|if\s*\(|while\s*\(|repeat\b|fork\b|partition\b|:)/i.test(r) && !/^end\s+(?:note|fork)/i.test(r)) && !body.some((r) => /(?:^(?:participant|actor|class|state|entity)\b|->)/.test(r) && !r.startsWith('->'))) return 'activity';
     if (body.some((r) => /^(Person|System|Container|Component|Enterprise)(Db|Queue)?(_Ext)?\(|^!include\s.*C4/i.test(r))) return 'c4';
     if (body.some((r) => /^state\b|\[\*\]/.test(r))) return 'state';
     if (body.some((r) => /^(class|interface|abstract|enum)\s+\w+/i.test(r))) return 'class';
     if (body.some((r) => /^(component|node|cloud|package|rectangle|folder|frame|database|storage|artifact|queue|usecase)\s+\S+|^\[[^\]]+\]\s*(?:<?[-.]+|as\b)/i.test(r)) && !body.some((r) => /^participant\b/i.test(r))) return 'component';
     if (body.some((r) => /^entity\b/i.test(r)) && body.some((r) => /[|}o][|o{}]--[|o{}][|o{}]/.test(r))) return 'er';
-    if (body.some((r) => /^:.*;?$/.test(r)) && !body.some((r) => /^\w+\s*-+>/.test(r))) return 'activity';
+    if (body.some((r) => /^:/.test(r)) && !body.some((r) => /^\w+\s*-+>/.test(r))) return 'activity';
   }
   return undefined;
 }
