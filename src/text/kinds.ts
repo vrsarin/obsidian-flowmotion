@@ -56,225 +56,339 @@ class Builder {
 
 interface Pending { from: string; text?: string }
 
-function activity(lines: [string, number][], b: Builder) {
-  // `front` = nodes the next element hangs off (with the label of the arrow into it).
-  let front: Pending[] = [];
-  const stack: ({ kind: 'if'; cond: string; branches: Pending[][]; entry: Pending[]; pendingText?: string }
-    | { kind: 'while'; head: string; exitText?: string }
-    | { kind: 'repeat'; top: string }
-    | { kind: 'fork'; entry: Pending[]; branches: Pending[][]; merge?: string }
-    | { kind: 'group'; id: string })[] = [];
-  let arrowText: string | undefined;
-  const grp = () => { for (let i = stack.length - 1; i >= 0; i--) { const s = stack[i]!; if (s.kind === 'group') return s.id; } return undefined; };
-  const attach = (id: string) => {
-    for (const p of front) b.link(p.from, id, { text: p.text ?? arrowText });
-    arrowText = undefined;
-    front = [{ from: id }];
-  };
-  const add = (label: string, shape: Shape | undefined, prefix: string) => {
-    const id = b.fresh(prefix);
-    b.node(id, label, shape, grp());
-    attach(id);
-    return id;
-  };
+type Frame =
+  | { kind: 'if'; cond: string; branches: Pending[][]; entry: Pending[]; pendingText?: string }
+  | { kind: 'while'; head: string; exitText?: string }
+  | { kind: 'repeat'; top: string }
+  | { kind: 'fork'; entry: Pending[]; branches: Pending[][]; merge?: string }
+  | { kind: 'group'; id: string };
 
-  let i = 0;
-  while (i < lines.length) {
-    const [s, ln] = lines[i]!; i++;
-    if (!s || s.startsWith("'") || /^(skinparam|title|header|footer|legend|hide|show|left to right|top to bottom)\b/i.test(s)) continue;
-    const t = s.replace(/;$/, '').trimEnd();
-    let m: RegExpExecArray | null;
-    if (/^start\b/i.test(t)) { add('Start', 'start', 's'); continue; }
-    if (/^(stop|end)\s*$/i.test(t)) { if (front.length) { add('End', 'end', 'e'); front = []; } continue; }
-    if (/^kill\s*$|^detach\s*$/i.test(t)) { front = []; continue; }
-    if (/^note\b/i.test(t)) {
-      if (!/^note\s+\w+\s*:/i.test(t)) {
-        while (i < lines.length && !/^end\s*note/i.test(lines[i]![0])) i++;
-      }
-      i++;
-      continue;
+const ACTIVITY_SKIP = /^(skinparam|title|header|footer|legend|hide|show|left to right|top to bottom)\b/i;
+/** A cleaned optional label, or the default when the source gave none. */
+const labelOr = (v: string | undefined, dflt: string) => (v === undefined ? dflt : clean(v));
+
+class ActivityParser {
+  /** Nodes the next element hangs off (with the label of the arrow into it). */
+  private front: Pending[] = [];
+  private readonly stack: Frame[] = [];
+  private arrowText: string | undefined;
+  private i = 0;
+  constructor(private readonly lines: [string, number][], private readonly b: Builder) {}
+
+  run() {
+    const { lines, b } = this;
+    while (this.i < lines.length) {
+      const [s, ln] = lines[this.i++]!;
+      if (!s || s.startsWith("'") || ACTIVITY_SKIP.test(s)) continue;
+      const t = s.replace(/;$/, '').trimEnd();
+      if (!this.statement(s, t, ln)) b.bad(ln, `Unrecognised activity statement "${t.slice(0, 40)}". Use start, :action;, if/else/endif, while/endwhile, repeat, fork, stop.`);
     }
-    m = /^->(.*)$/.exec(t);
-    if (m) { arrowText = clean(m[1]!) || undefined; continue; }
-    if (s.startsWith(':')) { // action, possibly several lines until ';'
-      let text = s.slice(1);
-      while (!/[;|<>/\]}]\s*$/.test(text) && i < lines.length) text += ' ' + lines[i++]![0];
-      text = text.replace(/[;|<>/\]}]\s*$/, '');
-      add(clean(text), 'round', 'a');
-      continue;
-    }
-    m = /^(?:partition|package|rectangle|group|card)\s+("[^"]*"|\S+)\s*\{?$/i.exec(t);
-    if (m) {
-      const label = clean(m[1]!), id = b.fresh('g_') + slug(label);
-      b.group(id, label, grp());
-      stack.push({ kind: 'group', id });
-      continue;
-    }
-    if (/^swimlane\b|^\|[^|]*\|/.test(t)) continue;
-    m = /^if\s*\((.*?)\)\s*(?:then\s*(?:\((.*)\))?)?\s*$/i.exec(t);
-    if (m) {
-      const id = add(clean(m[1]!), 'diamond', 'd');
-      stack.push({ kind: 'if', cond: id, branches: [], entry: [{ from: id, text: m[2] !== undefined ? clean(m[2]) : 'yes' }] });
-      front = [{ from: id, text: m[2] !== undefined ? clean(m[2]) : 'yes' }];
-      continue;
-    }
-    m = /^else\s*(?:\((.*)\))?$/i.exec(t) ?? /^elseif\s*\((.*?)\)\s*(?:then\s*(?:\((.*)\))?)?$/i.exec(t);
-    if (m) {
-      const top = stack.at(-1);
-      if (top?.kind !== 'if') { b.bad(ln, '"else" without "if".'); continue; }
-      top.branches.push(front);
-      const elseif = /^elseif/i.test(t);
-      if (elseif) {
-        // Chain: the new condition hangs off the previous decision's "no" exit.
-        const id = b.fresh('d');
-        b.node(id, clean(m[1]!), 'diamond', grp());
-        b.link(top.cond, id, { text: 'no' });
-        top.cond = id;
-        front = [{ from: id, text: m[2] !== undefined ? clean(m[2]) : 'yes' }];
-      } else {
-        front = [{ from: top.cond, text: m[1] !== undefined ? clean(m[1]) : 'no' }];
-        top.cond = ''; // else taken
-      }
-      continue;
-    }
-    if (/^endif\s*$/i.test(t)) {
-      const top = stack.pop();
-      if (top?.kind !== 'if') { b.bad(ln, '"endif" without "if".'); continue; }
-      const out = [...top.branches.flat(), ...front];
-      // No else branch: the last decision's "no" exit falls through.
-      if (top.cond) out.push({ from: top.cond, text: 'no' });
-      front = out;
-      continue;
-    }
-    m = /^while\s*\((.*?)\)\s*(?:is\s*\((.*)\))?$/i.exec(t);
-    if (m) {
-      const id = add(clean(m[1]!), 'diamond', 'w');
-      front = [{ from: id, text: m[2] !== undefined ? clean(m[2]) : 'yes' }];
-      stack.push({ kind: 'while', head: id });
-      continue;
-    }
-    m = /^endwhile\s*(?:\((.*)\))?$/i.exec(t);
-    if (m) {
-      const top = stack.pop();
-      if (top?.kind !== 'while') { b.bad(ln, '"endwhile" without "while".'); continue; }
-      for (const p of front) b.link(p.from, top.head, { text: p.text });
-      front = [{ from: top.head, text: m[1] !== undefined ? clean(m[1]) : 'no' }];
-      continue;
-    }
-    if (/^repeat\s*$/i.test(t)) { const id = b.fresh('r'); b.node(id, '', 'circle', grp()); b.nodes.get(id)!.label = ' '; attach(id); stack.push({ kind: 'repeat', top: id }); continue; }
-    m = /^repeat\s*while\s*\((.*?)\)(?:\s*is\s*\((.*)\))?(?:\s*not\s*\((.*)\))?$/i.exec(t);
-    if (m) {
-      const top = stack.pop();
-      if (top?.kind !== 'repeat') { b.bad(ln, '"repeat while" without "repeat".'); continue; }
-      const id = add(clean(m[1]!), 'diamond', 'd');
-      b.link(id, top.top, { text: m[2] !== undefined ? clean(m[2]) : 'yes' });
-      front = [{ from: id, text: m[3] !== undefined ? clean(m[3]) : 'no' }];
-      continue;
-    }
-    if (/^(fork|split)\s*$/i.test(t)) {
-      const id = add('fork', 'bar', 'f');
-      stack.push({ kind: 'fork', entry: [{ from: id }], branches: [], merge: undefined });
-      continue;
-    }
-    if (/^(fork again|split again)\s*$/i.test(t)) {
-      const top = stack.at(-1);
-      if (top?.kind !== 'fork') { b.bad(ln, '"fork again" without "fork".'); continue; }
-      top.branches.push(front);
-      front = top.entry;
-      continue;
-    }
-    if (/^(end fork|end split|endfork|endsplit)\s*(\{.*\})?\s*$/i.test(t)) {
-      const top = stack.pop();
-      if (top?.kind !== 'fork') { b.bad(ln, '"end fork" without "fork".'); continue; }
-      const ends = [...top.branches.flat(), ...front];
-      const id = b.fresh('j');
-      b.node(id, 'join', 'bar', grp());
-      for (const p of ends) b.link(p.from, id, { text: p.text });
-      front = [{ from: id }];
-      continue;
-    }
-    if (/^\}\s*$/.test(t) || /^end\s*partition|^end\s*package/i.test(t)) {
-      if (stack.at(-1)?.kind === 'group') stack.pop();
-      continue;
-    }
-    b.bad(ln, `Unrecognised activity statement "${t.slice(0, 40)}". Use start, :action;, if/else/endif, while/endwhile, repeat, fork, stop.`);
+    if (this.stack.length) b.bad(lines.length ? lines.at(-1)![1] : 1, `"${this.stack.at(-1)!.kind}" is never closed.`);
   }
-  if (stack.length) b.bad(lines.length ? lines.at(-1)![1] : 1, `"${stack.at(-1)!.kind}" is never closed.`);
+
+  private statement(s: string, t: string, ln: number): boolean {
+    return this.simple(t) || this.note(t) || this.arrow(t) || this.action(s) || this.container(t)
+      || this.conditional(t, ln) || this.loop(t, ln) || this.fork(t, ln) || this.closeBlock(t);
+  }
+
+  private grp(): string | undefined {
+    for (let i = this.stack.length - 1; i >= 0; i--) { const s = this.stack[i]!; if (s.kind === 'group') return s.id; }
+    return undefined;
+  }
+  private attach(id: string) {
+    for (const p of this.front) this.b.link(p.from, id, { text: p.text ?? this.arrowText });
+    this.arrowText = undefined;
+    this.front = [{ from: id }];
+  }
+  private add(label: string, shape: Shape | undefined, prefix: string) {
+    const id = this.b.fresh(prefix);
+    this.b.node(id, label, shape, this.grp());
+    this.attach(id);
+    return id;
+  }
+
+  private simple(t: string): boolean {
+    if (/^start\b/i.test(t)) this.add('Start', 'start', 's');
+    else if (/^(stop|end)\s*$/i.test(t)) {
+      if (this.front.length) { this.add('End', 'end', 'e'); this.front = []; }
+    } else if (/^kill\s*$|^detach\s*$/i.test(t)) this.front = [];
+    else return false;
+    return true;
+  }
+
+  private note(t: string): boolean {
+    if (!/^note\b/i.test(t)) return false;
+    if (!/^note\s+\w+\s*:/i.test(t)) {
+      while (this.i < this.lines.length && !/^end\s*note/i.test(this.lines[this.i]![0])) this.i++;
+    }
+    this.i++;
+    return true;
+  }
+
+  private arrow(t: string): boolean {
+    const m = /^->(.*)$/.exec(t);
+    if (!m) return false;
+    this.arrowText = clean(m[1]!) || undefined;
+    return true;
+  }
+
+  /** An action, possibly several lines until ';'. */
+  private action(s: string): boolean {
+    if (!s.startsWith(':')) return false;
+    let text = s.slice(1);
+    while (!/[;|<>/\]}]\s*$/.test(text) && this.i < this.lines.length) text += ' ' + this.lines[this.i++]![0];
+    text = text.replace(/[;|<>/\]}]\s*$/, '');
+    this.add(clean(text), 'round', 'a');
+    return true;
+  }
+
+  private container(t: string): boolean {
+    const m = /^(?:partition|package|rectangle|group|card)\s+("[^"]*"|\S+)\s*\{?$/i.exec(t);
+    if (!m) return /^swimlane\b|^\|[^|]*\|/.test(t);
+    const label = clean(m[1]!), id = this.b.fresh('g_') + slug(label);
+    this.b.group(id, label, this.grp());
+    this.stack.push({ kind: 'group', id });
+    return true;
+  }
+
+  private conditional(t: string, ln: number): boolean {
+    return this.ifStart(t) || this.elseBranch(t, ln) || this.endif(t, ln);
+  }
+
+  private ifStart(t: string): boolean {
+    const m = /^if\s*\((.*?)\)\s*(?:then\s*(?:\((.*)\))?)?\s*$/i.exec(t);
+    if (!m) return false;
+    const id = this.add(clean(m[1]!), 'diamond', 'd');
+    this.stack.push({ kind: 'if', cond: id, branches: [], entry: [{ from: id, text: labelOr(m[2], 'yes') }] });
+    this.front = [{ from: id, text: labelOr(m[2], 'yes') }];
+    return true;
+  }
+
+  private elseBranch(t: string, ln: number): boolean {
+    const m = /^else\s*(?:\((.*)\))?$/i.exec(t) ?? /^elseif\s*\((.*?)\)\s*(?:then\s*(?:\((.*)\))?)?$/i.exec(t);
+    if (!m) return false;
+    const top = this.stack.at(-1);
+    if (top?.kind !== 'if') { this.b.bad(ln, '"else" without "if".'); return true; }
+    top.branches.push(this.front);
+    if (/^elseif/i.test(t)) {
+      // Chain: the new condition hangs off the previous decision's "no" exit.
+      const id = this.b.fresh('d');
+      this.b.node(id, clean(m[1]!), 'diamond', this.grp());
+      this.b.link(top.cond, id, { text: 'no' });
+      top.cond = id;
+      this.front = [{ from: id, text: labelOr(m[2], 'yes') }];
+    } else {
+      this.front = [{ from: top.cond, text: labelOr(m[1], 'no') }];
+      top.cond = ''; // else taken
+    }
+    return true;
+  }
+
+  private endif(t: string, ln: number): boolean {
+    if (!/^endif\s*$/i.test(t)) return false;
+    const top = this.stack.pop();
+    if (top?.kind !== 'if') { this.b.bad(ln, '"endif" without "if".'); return true; }
+    const out = [...top.branches.flat(), ...this.front];
+    // No else branch: the last decision's "no" exit falls through.
+    if (top.cond) out.push({ from: top.cond, text: 'no' });
+    this.front = out;
+    return true;
+  }
+
+  private loop(t: string, ln: number): boolean {
+    return this.whileStart(t) || this.endWhile(t, ln) || this.repeatStart(t) || this.repeatWhile(t, ln);
+  }
+
+  private whileStart(t: string): boolean {
+    const m = /^while\s*\((.*?)\)\s*(?:is\s*\((.*)\))?$/i.exec(t);
+    if (!m) return false;
+    const id = this.add(clean(m[1]!), 'diamond', 'w');
+    this.front = [{ from: id, text: labelOr(m[2], 'yes') }];
+    this.stack.push({ kind: 'while', head: id });
+    return true;
+  }
+
+  private endWhile(t: string, ln: number): boolean {
+    const m = /^endwhile\s*(?:\((.*)\))?$/i.exec(t);
+    if (!m) return false;
+    const top = this.stack.pop();
+    if (top?.kind !== 'while') { this.b.bad(ln, '"endwhile" without "while".'); return true; }
+    for (const p of this.front) this.b.link(p.from, top.head, { text: p.text });
+    this.front = [{ from: top.head, text: labelOr(m[1], 'no') }];
+    return true;
+  }
+
+  private repeatStart(t: string): boolean {
+    if (!/^repeat\s*$/i.test(t)) return false;
+    const id = this.b.fresh('r');
+    this.b.node(id, '', 'circle', this.grp());
+    this.b.nodes.get(id)!.label = ' ';
+    this.attach(id);
+    this.stack.push({ kind: 'repeat', top: id });
+    return true;
+  }
+
+  private repeatWhile(t: string, ln: number): boolean {
+    const m = /^repeat\s*while\s*\((.*?)\)(?:\s*is\s*\((.*)\))?(?:\s*not\s*\((.*)\))?$/i.exec(t);
+    if (!m) return false;
+    const top = this.stack.pop();
+    if (top?.kind !== 'repeat') { this.b.bad(ln, '"repeat while" without "repeat".'); return true; }
+    const id = this.add(clean(m[1]!), 'diamond', 'd');
+    this.b.link(id, top.top, { text: labelOr(m[2], 'yes') });
+    this.front = [{ from: id, text: labelOr(m[3], 'no') }];
+    return true;
+  }
+
+  private fork(t: string, ln: number): boolean {
+    return this.forkStart(t) || this.forkAgain(t, ln) || this.endFork(t, ln);
+  }
+
+  private forkStart(t: string): boolean {
+    if (!/^(fork|split)\s*$/i.test(t)) return false;
+    const id = this.add('fork', 'bar', 'f');
+    this.stack.push({ kind: 'fork', entry: [{ from: id }], branches: [], merge: undefined });
+    return true;
+  }
+
+  private forkAgain(t: string, ln: number): boolean {
+    if (!/^(fork again|split again)\s*$/i.test(t)) return false;
+    const top = this.stack.at(-1);
+    if (top?.kind !== 'fork') { this.b.bad(ln, '"fork again" without "fork".'); return true; }
+    top.branches.push(this.front);
+    this.front = top.entry;
+    return true;
+  }
+
+  private endFork(t: string, ln: number): boolean {
+    if (!/^(end fork|end split|endfork|endsplit)\s*(\{.*\})?\s*$/i.test(t)) return false;
+    const top = this.stack.pop();
+    if (top?.kind !== 'fork') { this.b.bad(ln, '"end fork" without "fork".'); return true; }
+    const ends = [...top.branches.flat(), ...this.front];
+    const id = this.b.fresh('j');
+    this.b.node(id, 'join', 'bar', this.grp());
+    for (const p of ends) this.b.link(p.from, id, { text: p.text });
+    this.front = [{ from: id }];
+    return true;
+  }
+
+  private closeBlock(t: string): boolean {
+    if (!/^\}\s*$/.test(t) && !/^end\s*partition|^end\s*package/i.test(t)) return false;
+    if (this.stack.at(-1)?.kind === 'group') this.stack.pop();
+    return true;
+  }
+}
+
+function activity(lines: [string, number][], b: Builder) {
+  new ActivityParser(lines, b).run();
 }
 
 // ---------------------------------------------------------------- state diagram
 
-function state(lines: [string, number][], b: Builder) {
-  const scope: string[] = [];
-  const startId = (g?: string) => `start_${g ?? 'root'}`;
-  const endId = (g?: string) => `end_${g ?? 'root'}`;
-  const cur = () => scope.at(-1);
-  const alias = new Map<string, string>();
-  // Composite states are groups; find them first so an earlier edge to one doesn't create a plain node.
-  const composite = new Set<string>();
-  for (const [s] of lines) { const m = /^state\s+(?:"[^"]*"\s+as\s+)?(\w+)\s*(?:<<\w+>>)?\s*\{\s*$/i.exec(s); if (m) composite.add(m[1]!); }
-  const ref = (raw: string, ln: number): string => {
+const startId = (g?: string) => `start_${g ?? 'root'}`;
+const endId = (g?: string) => `end_${g ?? 'root'}`;
+
+class StateParser {
+  private readonly scope: string[] = [];
+  private readonly alias = new Map<string, string>();
+  /** Composite states are groups; found first so an earlier edge to one doesn't create a plain node. */
+  private readonly composite = new Set<string>();
+  constructor(private readonly lines: [string, number][], private readonly b: Builder) {
+    for (const [s] of lines) { const m = /^state\s+(?:"[^"]*"\s+as\s+)?(\w+)\s*(?:<<\w+>>)?\s*\{\s*$/i.exec(s); if (m) this.composite.add(m[1]!); }
+  }
+
+  run() {
+    const { lines, b } = this;
+    for (const [s, ln] of lines) {
+      if (!s || s.startsWith("'") || /^(direction|skinparam|hide|title|scale|note|end note)\b/i.test(s)) continue;
+      if (!this.statement(s, ln)) b.bad(ln, `Unrecognised state statement "${s.slice(0, 40)}". Use "A --> B : event", "[*] --> A", "state X { ... }".`);
+    }
+    if (this.scope.length) b.bad(lines.length ? lines.at(-1)![1] : 1, `State "${this.scope.at(-1)}" is never closed with "}".`);
+    retargetGroups(b);
+    uniqueFlowIds(b);
+  }
+
+  private statement(s: string, ln: number): boolean {
+    return this.aliased(s) || this.declared(s) || this.closeScope(s, ln)
+      || s === '--' || s === '||' // concurrent regions: drawn as one group
+      || this.transition(s, ln) || this.description(s);
+  }
+
+  private cur() { return this.scope.at(-1); }
+  private ref(raw: string, ln: number): string {
     const t = raw.trim();
     if (t === '[*]') return '[*]';
-    const id = alias.get(t) ?? slug(t.replace(/^"|"$/g, ''));
-    if (!id) b.bad(ln, `"${raw}" cannot be used as a state name.`);
+    const id = this.alias.get(t) ?? slug(t.replace(/^"|"$/g, ''));
+    if (!id) this.b.bad(ln, `"${raw}" cannot be used as a state name.`);
     return id;
-  };
-  const ensure = (id: string, asTarget: boolean) => {
-    if (id === '[*]') {
-      const g = cur();
-      if (asTarget) { const e = endId(g); b.node(e, 'End', 'end', g); return e; }
-      const s = startId(g); b.node(s, 'Start', 'start', g); return s;
-    }
-    if (!b.nodes.has(id) && !composite.has(id)) b.node(id, id.replaceAll('_', ' '), 'round', cur());
-    return id;
-  };
-  for (const [s, ln] of lines) {
-    if (!s || s.startsWith("'") || /^(direction|skinparam|hide|title|scale|note|end note)\b/i.test(s)) continue;
-    let m: RegExpExecArray | null;
-    m = /^state\s+"([^"]*)"\s+as\s+(\w+)(?:\s*<<(\w+)>>)?\s*(\{)?$/i.exec(s);
-    if (m) {
-      alias.set(m[2]!, m[2]!);
-      if (m[4]) { b.group(m[2]!, clean(m[1]!), cur()); scope.push(m[2]!); }
-      else b.node(m[2]!, clean(m[1]!), m[3] ? stereo(m[3]) : 'round', cur());
-      continue;
-    }
-    m = /^state\s+(\w+)(?:\s*<<(\w+)>>)?\s*(\{)?$/i.exec(s);
-    if (m) {
-      if (m[3]) { b.group(m[1]!, m[1]!.replaceAll('_', ' '), cur()); scope.push(m[1]!); }
-      else b.node(m[1]!, m[2] ? '' : m[1]!.replaceAll('_', ' '), m[2] ? stereo(m[2]) : 'round', cur());
-      continue;
-    }
-    if (s === '}') {
-      if (scope.length) scope.pop();
-      else b.bad(ln, 'Unmatched "}".');
-      continue;
-    }
-    if (s === '--' || s === '||') continue; // concurrent regions: drawn as one group
-    m = /^(\[\*\]|[\w"]+)\s*([-.=]+>)\s*(\[\*\]|[\w"]+)(?:\s*:(.*))?$/.exec(s);
-    if (m) {
-      const a = ensure(ref(m[1]!, ln), false), z = ensure(ref(m[3]!, ln), true);
-      b.link(a, z, { text: clean(m[4] ?? '') || undefined, line: m[2]!.startsWith('.') ? 'dotted' : undefined });
-      continue;
-    }
-    m = /^(\w+)\s*:(.+)$/.exec(s);
-    if (m) { // description line
-      const id = ensure(m[1]!, false), n = b.nodes.get(id)!;
-      n.lines = [...(n.lines ?? []), clean(m[2]!)];
-      if (!n.shape || n.shape === 'round') n.shape = 'class';
-      continue;
-    }
-    b.bad(ln, `Unrecognised state statement "${s.slice(0, 40)}". Use "A --> B : event", "[*] --> A", "state X { ... }".`);
   }
-  if (scope.length) b.bad(lines.length ? lines.at(-1)![1] : 1, `State "${scope.at(-1)}" is never closed with "}".`);
-  // A state with a `{ }` body is a group: edges to it would need a node. Retarget to its start/first child.
+  private ensure(id: string, asTarget: boolean): string {
+    const { b } = this;
+    if (id === '[*]') {
+      const g = this.cur();
+      const pid = asTarget ? endId(g) : startId(g);
+      b.node(pid, asTarget ? 'End' : 'Start', asTarget ? 'end' : 'start', g);
+      return pid;
+    }
+    if (!b.nodes.has(id) && !this.composite.has(id)) b.node(id, id.replaceAll('_', ' '), 'round', this.cur());
+    return id;
+  }
+
+  private aliased(s: string): boolean {
+    const m = /^state\s+"([^"]*)"\s+as\s+(\w+)(?:\s*<<(\w+)>>)?\s*(\{)?$/i.exec(s);
+    if (!m) return false;
+    this.alias.set(m[2]!, m[2]!);
+    if (m[4]) { this.b.group(m[2]!, clean(m[1]!), this.cur()); this.scope.push(m[2]!); }
+    else this.b.node(m[2]!, clean(m[1]!), m[3] ? stereo(m[3]) : 'round', this.cur());
+    return true;
+  }
+
+  private declared(s: string): boolean {
+    const m = /^state\s+(\w+)(?:\s*<<(\w+)>>)?\s*(\{)?$/i.exec(s);
+    if (!m) return false;
+    if (m[3]) { this.b.group(m[1]!, m[1]!.replaceAll('_', ' '), this.cur()); this.scope.push(m[1]!); }
+    else this.b.node(m[1]!, m[2] ? '' : m[1]!.replaceAll('_', ' '), m[2] ? stereo(m[2]) : 'round', this.cur());
+    return true;
+  }
+
+  private closeScope(s: string, ln: number): boolean {
+    if (s !== '}') return false;
+    if (this.scope.length) this.scope.pop();
+    else this.b.bad(ln, 'Unmatched "}".');
+    return true;
+  }
+
+  private transition(s: string, ln: number): boolean {
+    const m = /^(\[\*\]|[\w"]+)\s*([-.=]+>)\s*(\[\*\]|[\w"]+)(?:\s*:(.*))?$/.exec(s);
+    if (!m) return false;
+    const a = this.ensure(this.ref(m[1]!, ln), false), z = this.ensure(this.ref(m[3]!, ln), true);
+    this.b.link(a, z, { text: clean(m[4] ?? '') || undefined, line: m[2]!.startsWith('.') ? 'dotted' : undefined });
+    return true;
+  }
+
+  /** `A : text` adds a description line to state A. */
+  private description(s: string): boolean {
+    const m = /^(\w+)\s*:(.+)$/.exec(s);
+    if (!m) return false;
+    const n = this.b.nodes.get(this.ensure(m[1]!, false))!;
+    n.lines = [...(n.lines ?? []), clean(m[2]!)];
+    if (!n.shape || n.shape === 'round') n.shape = 'class';
+    return true;
+  }
+}
+
+/** A state with a `{ }` body is a group: edges to it would need a node. Retarget to its start/first child. */
+function retargetGroups(b: Builder) {
   for (const g of b.groups.keys()) {
     const inner = [...b.nodes.values()].find((n) => n.group === g);
+    const pick = (own: string, fallback: string) => (b.nodes.has(own) ? own : inner?.id ?? fallback);
     for (const f of b.flows) {
-      if (f.to === g) f.to = b.nodes.has(startId(g)) ? startId(g) : inner?.id ?? f.to;
-      if (f.from === g) f.from = b.nodes.has(endId(g)) ? endId(g) : inner?.id ?? f.from;
+      if (f.to === g) f.to = pick(startId(g), f.to);
+      if (f.from === g) f.from = pick(endId(g), f.from);
     }
   }
+}
+
+function uniqueFlowIds(b: Builder) {
   b.flows.forEach((f) => { f.id = `${f.from}_${f.to}`; });
   const seen = new Set<string>();
   b.flows.forEach((f) => {
@@ -283,6 +397,10 @@ function state(lines: [string, number][], b: Builder) {
     seen.add(id);
     f.id = id;
   });
+}
+
+function state(lines: [string, number][], b: Builder) {
+  new StateParser(lines, b).run();
 }
 function stereo(s: string): Shape {
   if (/choice/i.test(s)) return 'diamond';
@@ -293,138 +411,205 @@ function stereo(s: string): Shape {
 
 const DECO: Record<string, End> = { '<|': 'triangle', '|>': 'triangle', '*': 'diamond-filled', o: 'diamond' };
 const REL = /^(\w+)\s*(?:"([^"]*)")?\s*((?:<\|?|\*|o|<|\|>|>)?)(-+|\.+)((?:\|>|\*|o|>|<)?)\s*(?:"([^"]*)")?\s*(\w+)\s*(?::\s*(.*))?$/;
+const CLASS_SKIP = /^(direction|skinparam|hide|show|title|note|namespace|package|set)\b/i;
+const deco = (tok?: string): End | undefined => (tok ? DECO[tok] ?? 'arrow' : undefined);
 
-function classes(lines: [string, number][], b: Builder) {
-  let open: NodeDef | undefined;
-  const cls = (id: string) => {
-    const n = b.node(id, id, 'class');
+class ClassParser {
+  private open: NodeDef | undefined;
+  constructor(private readonly lines: [string, number][], private readonly b: Builder) {}
+
+  run() {
+    for (const [s, ln] of this.lines) {
+      if (!s || s.startsWith("'") || s.startsWith('%%') || CLASS_SKIP.test(s)) continue;
+      if (this.open) { this.body(s); continue; }
+      if (!this.statement(s)) this.b.bad(ln, `Unrecognised class statement "${s.slice(0, 40)}". Use "class A { +field }", "A <|-- B", "A *-- B", "A --> B : label".`);
+    }
+  }
+
+  private statement(s: string): boolean {
+    return this.declaration(s) || this.simpleClass(s) || this.memberLine(s) || this.relation(s) || this.openBrace(s);
+  }
+
+  private cls(id: string) {
+    const n = this.b.node(id, id, 'class');
     n.lines ??= [];
     return n;
-  };
-  const member = (n: NodeDef, text: string) => {
+  }
+  private member(n: NodeDef, text: string) {
     const t = text.trim();
     if (!t) return;
     const stereotype = /^<<(.+)>>$/.exec(t);
     if (stereotype) { n.label = n.label.replace(/^«.*?»\s*/, ''); n.label = `«${stereotype[1]}» ${n.label}`; return; }
     n.lines!.push(t);
-  };
-  for (const [s, ln] of lines) {
-    if (!s || s.startsWith("'") || s.startsWith('%%') || /^(direction|skinparam|hide|show|title|note|namespace|package|set)\b/i.test(s)) continue;
-    let m: RegExpExecArray | null;
-    if (open) {
-      if (s === '}') open = undefined;
-      else member(open, s);
-      continue;
-    }
-    m = /^(?:(abstract|interface|enum)\s+)?class\s+(\w+)(?:\s*<<(\w+)>>)?\s*(\{)?(?:\s*\{)?$/i.exec(s) ?? /^(interface|abstract class|abstract|enum)\s+(\w+)\s*(\{)?$/i.exec(s);
-    if (m) {
-      const kind = (m[1] && /interface|enum|abstract/i.test(m[1]) ? m[1] : /^(\S+)/.exec(s)![1]!).replace(/\s*class/i, '').toLowerCase();
-      const n = cls(m[2]!);
-      if (['interface', 'abstract', 'enum'].includes(kind) && !n.label.startsWith('«')) n.label = `«${kind}» ${m[2]}`;
-      if (/^class$/i.test(m[1] ?? '') === false && m[3] && m.length > 4 && /<</.test(s)) n.label = `«${m[3]}» ${m[2]}`;
-      if (/\{\s*$/.test(s)) open = n;
-      continue;
-    }
-    m = /^class\s+(\w+)\s*(\{)?$/i.exec(s);
-    if (m) {
-      const n = cls(m[1]!);
-      if (m[2]) open = n;
-      continue;
-    }
-    m = /^(\w+)\s*:(.+)$/.exec(s);
-    if (m && !/[-.][-.>|*o]/.test(m[2]!.trimStart().slice(0, 2)) && !REL.test(s)) {
-      member(cls(m[1]!), m[2]!);
-      continue;
-    }
-    const mer = /^(\w+)\s*(?:"([^"]*)")?\s*(<\||\*|o|<|\|>|>)?(--|\.\.)(\|>|\*|o|>|<)?\s*(?:"([^"]*)")?\s*(\w+)\s*(?::\s*(.*))?$/.exec(s);
-    if (mer) {
-      const [, a, ca, l, body, r, cb, z, label] = mer;
-      cls(a!); cls(z!);
-      const deco = (tok?: string): End | undefined => (tok ? DECO[tok] ?? 'arrow' : undefined);
-      // Arrow points at the end that carries the decoration. Left decoration => reverse so the head lands on `a`.
-      const left = deco(l), right = deco(r);
-      const dotted = body === '..';
-      if (left && !right) b.link(z!, a!, { text: label ? clean(label.replace(/^[<>]\s*|\s*[<>]$/g, '')) : undefined, line: dotted ? 'dotted' : undefined, head: left, headLabel: ca, tailLabel: cb });
-      else b.link(a!, z!, { text: label ? clean(label.replace(/^[<>]\s*|\s*[<>]$/g, '')) : undefined, line: dotted ? 'dotted' : undefined, head: right ?? 'none', tail: left, headLabel: cb, tailLabel: ca });
-      continue;
-    }
-    m = /^(\w+)\s*\{\s*$/.exec(s);
-    if (m) { open = cls(m[1]!); continue; }
-    b.bad(ln, `Unrecognised class statement "${s.slice(0, 40)}". Use "class A { +field }", "A <|-- B", "A *-- B", "A --> B : label".`);
   }
+  private body(s: string) {
+    if (s === '}') this.open = undefined;
+    else this.member(this.open!, s);
+  }
+
+  private declaration(s: string): boolean {
+    const m = /^(?:(abstract|interface|enum)\s+)?class\s+(\w+)(?:\s*<<(\w+)>>)?\s*(\{)?$/i.exec(s) ?? /^(interface|abstract class|abstract|enum)\s+(\w+)\s*(\{)?$/i.exec(s);
+    if (!m) return false;
+    const kind = (m[1] && /interface|enum|abstract/i.test(m[1]) ? m[1] : /^(\S+)/.exec(s)![1]!).replace(/\s*class/i, '').toLowerCase();
+    const n = this.cls(m[2]!);
+    if (['interface', 'abstract', 'enum'].includes(kind) && !n.label.startsWith('«')) n.label = `«${kind}» ${m[2]}`;
+    if (/^class$/i.test(m[1] ?? '') === false && m[3] && m.length > 4 && /<</.test(s)) n.label = `«${m[3]}» ${m[2]}`;
+    if (/\{\s*$/.test(s)) this.open = n;
+    return true;
+  }
+
+  private simpleClass(s: string): boolean {
+    const m = /^class\s+(\w+)\s*(\{)?$/i.exec(s);
+    if (!m) return false;
+    const n = this.cls(m[1]!);
+    if (m[2]) this.open = n;
+    return true;
+  }
+
+  private memberLine(s: string): boolean {
+    const m = /^(\w+)\s*:(.+)$/.exec(s);
+    if (!m || /[-.][-.>|*o]/.test(m[2]!.trimStart().slice(0, 2)) || REL.test(s)) return false;
+    this.member(this.cls(m[1]!), m[2]!);
+    return true;
+  }
+
+  private relation(s: string): boolean {
+    const m = /^(\w+)\s*(?:"([^"]*)")?\s*(<\||\*|o|<|\|>|>)?(--|\.\.)(\|>|\*|o|>|<)?\s*(?:"([^"]*)")?\s*(\w+)\s*(?::\s*(.*))?$/.exec(s);
+    if (!m) return false;
+    const [, a, ca, l, body, r, cb, z, label] = m;
+    this.cls(a!); this.cls(z!);
+    // Arrow points at the end that carries the decoration. Left decoration => reverse so the head lands on `a`.
+    const left = deco(l), right = deco(r);
+    const text = label ? clean(label.replace(/^[<>]\s*|\s*[<>]$/g, '')) : undefined;
+    const line = body === '..' ? 'dotted' : undefined;
+    if (left && !right) this.b.link(z!, a!, { text, line, head: left, headLabel: ca, tailLabel: cb });
+    else this.b.link(a!, z!, { text, line, head: right ?? 'none', tail: left, headLabel: cb, tailLabel: ca });
+    return true;
+  }
+
+  private openBrace(s: string): boolean {
+    const m = /^(\w+)\s*\{\s*$/.exec(s);
+    if (!m) return false;
+    this.open = this.cls(m[1]!);
+    return true;
+  }
+}
+
+function classes(lines: [string, number][], b: Builder) {
+  new ClassParser(lines, b).run();
 }
 
 // ---------------------------------------------------------------- ER diagram
 
 const CARD: Record<string, string> = { '||': '1', '|o': '0..1', 'o|': '0..1', '}o': '0..*', 'o{': '0..*', '}|': '1..*', '|{': '1..*', 'one': '1', 'zero or one': '0..1', 'zero or more': '0..*', 'one or more': '1..*' };
 
-function er(lines: [string, number][], b: Builder) {
-  let open: NodeDef | undefined;
-  const ent = (id: string) => { const n = b.node(id, id, 'class'); n.lines ??= []; return n; };
-  for (const [s, ln] of lines) {
-    if (!s || s.startsWith('%%') || s.startsWith("'") || /^(direction|title|skinparam)\b/i.test(s)) continue;
-    let m: RegExpExecArray | null;
-    if (open) {
-      if (s === '}') { open = undefined; continue; }
-      const a = /^(\S+)\s+(\S+)\s*(PK|FK|UK)?(?:\s*,\s*(PK|FK|UK))?\s*(?:"([^"]*)")?\s*$/i.exec(s);
-      if (a) {
-        const keys = [a[3], a[4]].filter(Boolean).map((k) => k!.toUpperCase()).join(',');
-        open.lines!.push(`${keys ? keys + ' ' : ''}${a[2]}: ${a[1]}`);
-      }
-      else b.bad(ln, `Attribute "${s}" should look like "type name PK".`);
-      continue;
+class ErParser {
+  private open: NodeDef | undefined;
+  constructor(private readonly lines: [string, number][], private readonly b: Builder) {}
+
+  run() {
+    for (const [s, ln] of this.lines) {
+      if (!s || s.startsWith('%%') || s.startsWith("'") || /^(direction|title|skinparam)\b/i.test(s)) continue;
+      if (this.open) { this.attribute(s, ln); continue; }
+      if (!(this.openEntity(s) || this.entity(s) || this.relation(s))) this.b.bad(ln, `Unrecognised ER statement "${s.slice(0, 40)}". Use "A ||--o{ B : has" or "ENTITY { type name PK }".`);
     }
-    m = /^(\w+)\s*\{\s*$/.exec(s);
-    if (m) { open = ent(m[1]!); continue; }
-    m = /^entity\s+("[^"]*"|\w+)(?:\s+as\s+(\w+))?\s*(\{)?$/i.exec(s);
-    if (m) {
-      const id = m[2] ?? slug(m[1]!), n = ent(id);
-      if (m[2]) n.label = clean(m[1]!);
-      if (m[3]) open = n;
-      continue;
-    }
-    // Mermaid: A ||--o{ B : label     PlantUML: A ||--o{ B : label (same tokens)
-    m = /^(\w+)\s+([|}o][|o{}])\s*(--|\.\.)\s*([|o{}][|o{}])\s+(\w+)(?:\s*:(.*))?$/.exec(s);
-    if (m) {
-      const [, a, l, body, r, z, label] = m;
-      ent(a!); ent(z!);
-      b.link(a!, z!, { text: clean(label ?? '') || undefined, line: body === '..' ? 'dotted' : undefined, head: 'none', tailLabel: CARD[l!] ?? l, headLabel: CARD[flip(r!)] ?? r });
-      continue;
-    }
-    b.bad(ln, `Unrecognised ER statement "${s.slice(0, 40)}". Use "A ||--o{ B : has" or "ENTITY { type name PK }".`);
   }
+
+  private ent(id: string) { const n = this.b.node(id, id, 'class'); n.lines ??= []; return n; }
+
+  private attribute(s: string, ln: number) {
+    if (s === '}') { this.open = undefined; return; }
+    const a = /^(\S+)\s+(\S+)\s*(PK|FK|UK)?(?:\s*,\s*(PK|FK|UK))?\s*(?:"([^"]*)")?\s*$/i.exec(s);
+    if (!a) { this.b.bad(ln, `Attribute "${s}" should look like "type name PK".`); return; }
+    const keys = [a[3], a[4]].filter(Boolean).map((k) => k!.toUpperCase()).join(',');
+    this.open!.lines!.push(`${keys ? keys + ' ' : ''}${a[2]}: ${a[1]}`);
+  }
+
+  private openEntity(s: string): boolean {
+    const m = /^(\w+)\s*\{\s*$/.exec(s);
+    if (!m) return false;
+    this.open = this.ent(m[1]!);
+    return true;
+  }
+
+  private entity(s: string): boolean {
+    const m = /^entity\s+("[^"]*"|\w+)(?:\s+as\s+(\w+))?\s*(\{)?$/i.exec(s);
+    if (!m) return false;
+    const id = m[2] ?? slug(m[1]!), n = this.ent(id);
+    if (m[2]) n.label = clean(m[1]!);
+    if (m[3]) this.open = n;
+    return true;
+  }
+
+  /** Mermaid and PlantUML share one relation syntax: A ||--o{ B : label */
+  private relation(s: string): boolean {
+    const m = /^(\w+)\s+([|}o][|o{}])\s*(--|\.\.)\s*([|o{}][|o{}])\s+(\w+)(?:\s*:(.*))?$/.exec(s);
+    if (!m) return false;
+    const [, a, l, body, r, z, label] = m;
+    this.ent(a!); this.ent(z!);
+    this.b.link(a!, z!, { text: clean(label ?? '') || undefined, line: body === '..' ? 'dotted' : undefined, head: 'none', tailLabel: CARD[l!] ?? l, headLabel: CARD[flip(r!)] ?? r });
+    return true;
+  }
+}
+
+function er(lines: [string, number][], b: Builder) {
+  new ErParser(lines, b).run();
 }
 const flip = (t: string) => ({ '|{': '|{', 'o{': 'o{', '||': '||', 'o|': 'o|', '|o': 'o|', '{o': 'o{', '{|': '|{' } as Record<string, string>)[t] ?? t;
 
 // ---------------------------------------------------------------- mindmap
 
+const WRAP = /^(\w+)?(?:\(\((.*)\)\)|\(\)(.*)\(\)|\{\{(.*)\}\}|\[(.*)\]|\((.*)\))$/;
+
+/** PlantUML bullet: `**[#red]_ text` => depth 1. */
+function plantBullet(line: string): { depth: number; text: string } | undefined {
+  const lead = /^[*+-]+/.exec(line)?.[0];
+  if (!lead) return undefined;
+  let body = line.slice(lead.length);
+  const colour = /^\[#\w+\]/.exec(body);
+  if (colour) body = body.slice(colour[0].length);
+  body = body.trimStart();
+  return { depth: lead.length - 1, text: (body.startsWith('_') ? body.slice(1) : body).trimStart() };
+}
+
+/** Depth and text of one source line, or undefined for blank/comment lines. */
+function mindmapLine(raw: string, plant: boolean): { depth: number; text: string } | undefined {
+  const t0 = raw.replaceAll('\t', '  ');
+  const trimmed = t0.trim();
+  if (!trimmed || trimmed.startsWith('%%') || trimmed.startsWith("'")) return undefined;
+  const bullet = plant ? plantBullet(trimmed) : undefined;
+  return bullet ?? { depth: Math.floor((/^ */.exec(t0)![0]).length / 2), text: trimmed };
+}
+
+/** Mermaid shape wrappers: id((text)), id(text), id[text], id{{text}}. */
+function unwrapShape(text: string, depth: number): { text: string; shape: Shape } {
+  const shape: Shape = depth === 0 ? 'circle' : 'round';
+  const w = WRAP.exec(text);
+  if (!w) return { text, shape };
+  const inner = w[2] ?? w[3] ?? w[4] ?? w[5] ?? w[6] ?? text;
+  if (w[4] !== undefined) return { text: inner, shape: 'hexagon' };
+  if (w[5] !== undefined) return { text: inner, shape: 'rect' };
+  return { text: inner, shape: w[2] === undefined ? 'round' : shape };
+}
+
 function mindmap(lines: [string, number][], b: Builder, plant: boolean) {
   const stack: { depth: number; id: string }[] = [];
   let k = 0;
   for (const [raw, ln] of lines) {
-    const t0 = raw.replaceAll('\t', '  ');
-    if (!t0.trim() || t0.trim().startsWith('%%') || t0.trim().startsWith("'")) continue;
-    let depth: number, text: string;
-    const pm = plant ? /^([*+-]+)(?:\[#\w+\])?(.*)$/.exec(t0.trim()) : null;
-    if (pm) { depth = pm[1]!.length - 1; const body = pm[2]!.trimStart();
-      text = (body.startsWith('_') ? body.slice(1) : body).trimStart(); }
-    else { depth = Math.floor((/^ */.exec(t0)![0]).length / 2); text = t0.trim(); }
-    // Mermaid shape wrappers: id((text)), id(text), id[text], ::icon lines
-    if (text.startsWith('::')) continue;
-    const wrap = /^(\w+)?(?:\(\((.*)\)\)|\(\)(.*)\(\)|\{\{(.*)\}\}|\[(.*)\]|\((.*)\))$/.exec(text);
-    let shape: Shape = depth === 0 ? 'circle' : 'round';
-    if (wrap) { text = wrap[2] ?? wrap[3] ?? wrap[4] ?? wrap[5] ?? wrap[6] ?? text; if (wrap[4] !== undefined) shape = 'hexagon'; else if (wrap[5] !== undefined) shape = 'rect'; else if (wrap[2] === undefined) shape = 'round'; }
-    text = clean(text.replace(/^\s*:\s*/, '').replace(/\s*;\s*$/, ''));
+    const parsed = mindmapLine(raw, plant);
+    if (!parsed || parsed.text.startsWith('::')) continue; // ::icon lines
+    const { depth } = parsed;
+    const unwrapped = unwrapShape(parsed.text, depth);
+    const text = clean(unwrapped.text.replace(/^\s*:\s*/, '').replace(/\s*;\s*$/, ''));
     if (!text) continue;
     while (stack.length && stack.at(-1)!.depth >= depth) stack.pop();
     if (!stack.length && depth > 0 && b.nodes.size) { b.bad(ln, 'Mind map has more than one root. Use one top-level item.'); continue; }
     const id = `n${++k}`;
-    b.node(id, text, shape);
+    b.node(id, text, unwrapped.shape);
     if (stack.length) b.link(stack.at(-1)!.id, id, { head: 'none' });
     stack.push({ depth, id });
   }
 }
-
 
 // ---------------------------------------------------------------- gantt (Mermaid + PlantUML)
 
@@ -444,7 +629,7 @@ const STATUS_STYLE: Record<string, Style> = {
 
 function plantClause(clause: string, t: TaskSpec, task: (key: string, label: string) => TaskSpec, b: Builder, ln: number) {
   const milestone = /^happens/i.test(clause);
-  const lasts = /^(?:lasts|requires)\s+(.+)$/i.exec(clause);
+  const lasts = /^(?:lasts|requires)\s+(\S.*)$/i.exec(clause);
   if (lasts) {
     const d = durDays(lasts[1]!);
     if (d === undefined) b.bad(ln, `"${lasts[1]}" is not a duration like "5 days".`);
@@ -468,112 +653,188 @@ function plantClause(clause: string, t: TaskSpec, task: (key: string, label: str
   if (milestone) { t.milestone = true; t.dur = 0; }
 }
 
-function gantt(lines: [string, number][], b: Builder, plant: boolean): GanttDef | undefined {
-  const specs: TaskSpec[] = [];
-  const byKey = new Map<string, TaskSpec>(); // id (Mermaid) or name (PlantUML)
-  let section: string | undefined, title: string | undefined, projectStart: number | undefined;
-  const sectionId = (name: string) => {
+const MERMAID_SKIP = /^(dateFormat|axisFormat|excludes|includes|todayMarker|tickInterval|weekday|weekend|accTitle|accDescr|click)\b/i;
+const PLANT_SKIP_CALENDAR = /^(?:saturday|sunday|monday|tuesday|wednesday|thursday|friday|\d{4}-\d{2}-\d{2})\b.*\b(?:are|is)\s+(?:closed|open)/i;
+const PLANT_SKIP_STYLE = /^(?:language|printscale|scale|hide|today|Project scale|footer|header|legend)\b/i;
+
+/** Mermaid task parts: `[id,] [start,] end` after any leading status tags. */
+function splitTaskParts(parts: string[]): [string | undefined, string | undefined, string | undefined] {
+  if (parts.length >= 3) return [parts[0], parts[1], parts[2]];
+  if (parts.length === 2) return [undefined, parts[0], parts[1]];
+  if (parts.length === 1) return [undefined, undefined, parts[0]];
+  return [undefined, undefined, undefined];
+}
+
+class GanttParser {
+  readonly specs: TaskSpec[] = [];
+  private readonly byKey = new Map<string, TaskSpec>(); // id (Mermaid) or name (PlantUML)
+  private section: string | undefined;
+  private title: string | undefined;
+  private projectStart: number | undefined;
+  constructor(private readonly b: Builder, private readonly plant: boolean) {}
+
+  line(s: string, ln: number) {
+    if (this.plant) this.plantLine(s, ln);
+    else this.mermaidLine(s, ln);
+  }
+
+  private sectionId(name: string) {
     const id = 'sec_' + slug(name);
-    if (!b.groups.has(id)) b.group(id, name);
+    if (!this.b.groups.has(id)) this.b.group(id, name);
     return id;
-  };
-  const task = (key: string, label: string): TaskSpec => {
-    let t = byKey.get(key);
+  }
+
+  private task = (key: string, label: string): TaskSpec => {
+    let t = this.byKey.get(key);
     if (!t) {
-      t = { id: slug(key), label, section };
-      if (specs.some((x) => x.id === t!.id)) t.id += specs.length;
-      specs.push(t);
-      byKey.set(key, t);
+      t = { id: slug(key), label, section: this.section };
+      if (this.specs.some((x) => x.id === t!.id)) t.id += this.specs.length;
+      this.specs.push(t);
+      this.byKey.set(key, t);
     }
     return t;
   };
-  for (const [s, ln] of lines) {
-    if (!s || s.startsWith("'") || s.startsWith('%%')) continue;
-    let m: RegExpExecArray | null;
-    if (!plant) {
-      m = /^title\s(.+)$/i.exec(s);
-      if (m) { title = clean(m[1]!); continue; }
-      m = /^section\s(.+)$/i.exec(s);
-      if (m) { section = sectionId(clean(m[1]!)); continue; }
-      if (/^(dateFormat|axisFormat|excludes|includes|todayMarker|tickInterval|weekday|weekend|accTitle|accDescr|click)\b/i.test(s)) continue;
-      const k = s.indexOf(':');
-      if (k < 0) { b.bad(ln, `Expected "Task name : id, start, duration".`); continue; }
-      const label = clean(s.slice(0, k)), parts = s.slice(k + 1).split(',').map((x) => x.trim()).filter(Boolean);
-      const t: TaskSpec = { id: `t${specs.length + 1}`, label, section };
-      while (parts.length && /^(done|active|crit|milestone)$/i.test(parts[0]!)) {
-        const tag = parts.shift()!.toLowerCase();
-        if (tag === 'milestone') t.milestone = true; else t.status = tag as TaskSpec['status'];
-      }
-      let id: string | undefined, start: string | undefined, end: string | undefined;
-      if (parts.length >= 3) [id, start, end] = parts; else if (parts.length === 2) [start, end] = parts; else if (parts.length === 1) end = parts[0];
-      if (id) t.id = slug(id);
-      if (specs.some((x) => x.id === t.id)) { b.bad(ln, `Duplicate task id "${t.id}".`); continue; }
-      if (start) {
-        const a = /^after\s+(.+)$/i.exec(start);
-        if (a) t.after = a[1]!.split(/\s+/).map(slug); else { const d = toDay(start); if (d === undefined) { b.bad(ln, `Start "${start}" is not a date (YYYY-MM-DD) or "after <id>".`); continue; } t.date = d; }
-      }
-      if (end) { const d = toDay(end); if (d !== undefined) t.endDate = d; else { const u = durDays(end); if (u === undefined) { b.bad(ln, `"${end}" is not a duration like 5d, 2w or a date.`); continue; } t.dur = u; } }
-      if (t.milestone) t.dur = 0;
-      specs.push(t); byKey.set(t.id, t);
-      continue;
-    }
-    // PlantUML gantt
-    if (/^(?:saturday|sunday|monday|tuesday|wednesday|thursday|friday|\d{4}-\d{2}-\d{2})\b.*\b(?:are|is)\s+(?:closed|open)/i.test(s) || /^(?:language|printscale|scale|hide|today|Project scale|footer|header|legend)\b/i.test(s)) continue;
-    m = /^title\s(.+)$/i.exec(s);
-    if (m) { title = clean(m[1]!); continue; }
-    m = /^project\s+starts\s+(?:the\s+|on\s+)?(\d{4}-\d{2}-\d{2})/i.exec(s);
-    if (m) { projectStart = toDay(m[1]!); continue; }
-    m = /^--(.*?)--$/.exec(s);
-    if (m) { section = sectionId(m[1]!.trim()); continue; }
-    m = /^(then\s+)?\[([^\]]+)\]\s(.*)$/i.exec(s);
-    if (m) {
-      const t = task(m[2]!, m[2]!);
-      const rest = m[3]!.trimStart();
-      if (m[1]) { const prev = specs[specs.indexOf(t) - 1]; if (prev) t.after = [prev.id]; }
-      if (/^(?:is|are)\s/i.test(rest)) continue; // colour, completion, deleted: cosmetic
-      if (/^as\s/i.test(rest)) continue;
-      for (const clause of rest.split(/\sand\s/i)) plantClause(clause.trim(), t, task, b, ln);
-      continue;
-    }
-    b.bad(ln, `Unrecognised Gantt statement "${s.slice(0, 40)}".`);
-  }
-  if (!specs.length) { b.bad(1, 'Define at least one task.'); return undefined; }
 
-  // Resolve start/end in days (absolute), following dependencies.
-  const idIndex = new Map(specs.map((t, i) => [t.id, i]));
-  const span = new Map<string, { start: number; end: number }>();
-  const busy = new Set<string>();
-  const first = specs.find((t) => t.date !== undefined)?.date;
-  const origin = projectStart ?? first ?? toDay('2025-01-01')!;
-  const resolve = (t: TaskSpec): { start: number; end: number } => {
-    const hit = span.get(t.id);
+  private mermaidLine(s: string, ln: number) {
+    const title = /^title\s(.+)$/i.exec(s);
+    if (title) { this.title = clean(title[1]!); return; }
+    const section = /^section\s(.+)$/i.exec(s);
+    if (section) { this.section = this.sectionId(clean(section[1]!)); return; }
+    if (MERMAID_SKIP.test(s)) return;
+    this.mermaidTask(s, ln);
+  }
+
+  private mermaidTask(s: string, ln: number) {
+    const { b, specs } = this;
+    const k = s.indexOf(':');
+    if (k < 0) { b.bad(ln, `Expected "Task name : id, start, duration".`); return; }
+    const label = clean(s.slice(0, k)), parts = s.slice(k + 1).split(',').map((x) => x.trim()).filter(Boolean);
+    const t: TaskSpec = { id: `t${specs.length + 1}`, label, section: this.section };
+    while (parts.length && /^(done|active|crit|milestone)$/i.test(parts[0]!)) {
+      const tag = parts.shift()!.toLowerCase();
+      if (tag === 'milestone') t.milestone = true; else t.status = tag as TaskSpec['status'];
+    }
+    const [id, start, end] = splitTaskParts(parts);
+    if (id) t.id = slug(id);
+    if (specs.some((x) => x.id === t.id)) { b.bad(ln, `Duplicate task id "${t.id}".`); return; }
+    if (start && !this.applyStart(t, start, ln)) return;
+    if (end && !this.applyEnd(t, end, ln)) return;
+    if (t.milestone) t.dur = 0;
+    specs.push(t); this.byKey.set(t.id, t);
+  }
+
+  private applyStart(t: TaskSpec, start: string, ln: number): boolean {
+    const after = /^after\s+(.+)$/i.exec(start);
+    if (after) { t.after = after[1]!.split(/\s+/).map(slug); return true; }
+    const d = toDay(start);
+    if (d === undefined) { this.b.bad(ln, `Start "${start}" is not a date (YYYY-MM-DD) or "after <id>".`); return false; }
+    t.date = d;
+    return true;
+  }
+
+  private applyEnd(t: TaskSpec, end: string, ln: number): boolean {
+    const d = toDay(end);
+    if (d !== undefined) { t.endDate = d; return true; }
+    const u = durDays(end);
+    if (u === undefined) { this.b.bad(ln, `"${end}" is not a duration like 5d, 2w or a date.`); return false; }
+    t.dur = u;
+    return true;
+  }
+
+  private plantLine(s: string, ln: number) {
+    if (PLANT_SKIP_CALENDAR.test(s) || PLANT_SKIP_STYLE.test(s)) return;
+    if (this.plantMeta(s) || this.plantTask(s, ln)) return;
+    this.b.bad(ln, `Unrecognised Gantt statement "${s.slice(0, 40)}".`);
+  }
+
+  private plantMeta(s: string): boolean {
+    let m = /^title\s(.+)$/i.exec(s);
+    if (m) { this.title = clean(m[1]!); return true; }
+    m = /^project\s+starts\s+(?:the\s+|on\s+)?(\d{4}-\d{2}-\d{2})/i.exec(s);
+    if (m) { this.projectStart = toDay(m[1]!); return true; }
+    m = /^--(.*?)--$/.exec(s);
+    if (!m) return false;
+    this.section = this.sectionId(m[1]!.trim());
+    return true;
+  }
+
+  private plantTask(s: string, ln: number): boolean {
+    const m = /^(then\s+)?\[([^\]]+)\]\s(.*)$/i.exec(s);
+    if (!m) return false;
+    const t = this.task(m[2]!, m[2]!);
+    const rest = m[3]!.trimStart();
+    if (m[1]) { const prev = this.specs[this.specs.indexOf(t) - 1]; if (prev) t.after = [prev.id]; }
+    if (/^(?:is|are)\s/i.test(rest) || /^as\s/i.test(rest)) return true; // colour, completion, deleted, alias: cosmetic
+    for (const clause of rest.split(/\sand\s/i)) plantClause(clause.trim(), t, this.task, this.b, ln);
+    return true;
+  }
+
+  finish(): GanttDef | undefined {
+    const { specs, b } = this;
+    if (!specs.length) { b.bad(1, 'Define at least one task.'); return undefined; }
+    const origin = this.projectStart ?? specs.find((t) => t.date !== undefined)?.date ?? toDay('2025-01-01')!;
+    const resolver = new SpanResolver(specs, origin, b);
+    for (const t of specs) resolver.resolve(t);
+    const lo = Math.min(...[...resolver.span.values()].map((v) => v.start));
+    const tasks: GanttDef['tasks'] = {};
+    for (const t of specs) {
+      const r = resolver.span.get(t.id)!;
+      tasks[t.id] = { start: r.start - lo, end: r.end - lo, ...(t.milestone && { milestone: true }) };
+      b.node(t.id, t.label, 'round', t.section);
+      if (t.status) b.nodes.get(t.id)!.style = STATUS_STYLE[t.status]!;
+      for (const a of t.after ?? []) if (resolver.idIndex.has(a)) b.link(a, t.id);
+    }
+    return { startDay: lo, tasks, ...(this.title && { title: this.title }) };
+  }
+}
+
+interface Span { start: number; end: number }
+
+/** Resolves each task's start/end in absolute days, following dependencies. */
+class SpanResolver {
+  readonly span = new Map<string, Span>();
+  readonly idIndex: Map<string, number>;
+  private readonly busy = new Set<string>();
+  constructor(private readonly specs: TaskSpec[], private readonly origin: number, private readonly b: Builder) {
+    this.idIndex = new Map(specs.map((t, i) => [t.id, i]));
+  }
+
+  private dep(t: TaskSpec, id: string): Span | undefined {
+    const i = this.idIndex.get(id);
+    if (i === undefined) { this.b.bad(1, `Task "${t.label}" refers to unknown task "${id}".`); return undefined; }
+    return this.resolve(this.specs[i]!);
+  }
+
+  private startOf(t: TaskSpec): number {
+    if (t.date !== undefined) return t.date;
+    if (t.after) return Math.max(this.origin, ...t.after.map((id) => this.dep(t, id)?.end ?? this.origin));
+    if (t.startOf) return this.dep(t, t.startOf)?.start ?? this.origin;
+    const i = this.specs.indexOf(t);
+    return i > 0 ? this.resolve(this.specs[i - 1]!).end : this.origin;
+  }
+
+  resolve(t: TaskSpec): Span {
+    const hit = this.span.get(t.id);
     if (hit) return hit;
-    if (busy.has(t.id)) { b.bad(1, `Task "${t.label}" depends on itself.`); return { start: origin, end: origin + 1 }; }
-    busy.add(t.id);
-    const dep = (id: string) => { const i = idIndex.get(id); if (i === undefined) { b.bad(1, `Task "${t.label}" refers to unknown task "${id}".`); return undefined; } return resolve(specs[i]!); };
-    let start: number;
-    if (t.date !== undefined) start = t.date;
-    else if (t.after) start = Math.max(origin, ...t.after.map((id) => dep(id)?.end ?? origin));
-    else if (t.startOf) start = dep(t.startOf)?.start ?? origin;
-    else { const i = specs.indexOf(t); start = i > 0 ? resolve(specs[i - 1]!).end : origin; }
+    if (this.busy.has(t.id)) { this.b.bad(1, `Task "${t.label}" depends on itself.`); return { start: this.origin, end: this.origin + 1 }; }
+    this.busy.add(t.id);
+    const start = this.startOf(t);
     let end = start + (t.dur ?? 1);
     if (t.endDate !== undefined) end = t.endDate + (t.endDate > start ? 1 : 0);
-    busy.delete(t.id);
+    this.busy.delete(t.id);
     const r = { start, end: Math.max(start, end) };
-    span.set(t.id, r);
+    this.span.set(t.id, r);
     return r;
-  };
-  for (const t of specs) resolve(t);
-  const lo = Math.min(...[...span.values()].map((v) => v.start));
-  const tasks: GanttDef['tasks'] = {};
-  for (const t of specs) {
-    const r = span.get(t.id)!;
-    tasks[t.id] = { start: r.start - lo, end: r.end - lo, ...(t.milestone && { milestone: true }) };
-    b.node(t.id, t.label, 'round', t.section);
-    if (t.status) b.nodes.get(t.id)!.style = STATUS_STYLE[t.status]!;
-    for (const a of t.after ?? []) if (idIndex.has(a)) b.link(a, t.id);
   }
-  return { startDay: lo, tasks, ...(title && { title }) };
+}
+
+function gantt(lines: [string, number][], b: Builder, plant: boolean): GanttDef | undefined {
+  const parser = new GanttParser(b, plant);
+  for (const [s, ln] of lines) {
+    if (!s || s.startsWith("'") || s.startsWith('%%')) continue;
+    parser.line(s, ln);
+  }
+  return parser.finish();
 }
 
 // ---------------------------------------------------------------- C4 (Mermaid C4* and PlantUML C4 macros share one syntax)
@@ -596,42 +857,53 @@ function splitArgs(s: string): string[] {
   return out;
 }
 
+const C4_SKIP = /^(!|title\b|LAYOUT_|SHOW_|HIDE_|Update\w+|AddElementTag|AddRelTag|skinparam|left to right)/i;
+const C4_BOUNDARY = /_Boundary$|^Boundary$|^Deployment_Node$|^Node(_L|_R)?$/i;
+
+function c4Boundary(b: Builder, scope: string[], a: string[], open: boolean) {
+  b.group(slug(a[0] ?? 'g'), clean(a[1] ?? a[0] ?? ''), scope.at(-1));
+  if (open) scope.push(slug(a[0] ?? 'g'));
+}
+
+function c4Rel(b: Builder, fn: string, a: string[], bidirectional: boolean, ln: number) {
+  if (a.length < 2) { b.bad(ln, 'Rel needs at least (from, to).'); return; }
+  const text = [a[2], a[3] && `[${a[3]}]`].filter(Boolean).join(' ');
+  const [from, to] = /Back/i.test(fn) ? [slug(a[1]!), slug(a[0]!)] : [slug(a[0]!), slug(a[1]!)];
+  b.link(from, to, { text: text || undefined, tail: bidirectional ? 'arrow' : undefined });
+}
+
+function c4StyleKey(kind: string, ext: boolean): string {
+  if (kind === 'person') return ext ? 'personExt' : 'person';
+  if (ext) return 'ext';
+  return kind === 'enterprise' ? 'system' : kind;
+}
+
+function c4Element(b: Builder, scope: string[], fn: string, a: string[], ln: number) {
+  const k = /^(Person|System|Container|Component|Enterprise|SystemDb|SystemQueue|ContainerDb|ContainerQueue|ComponentDb|ComponentQueue)(_Ext)?$/i.exec(fn);
+  if (!k) { b.bad(ln, `Unknown C4 element "${fn}".`); return; }
+  const kind = k[1]!.toLowerCase().replace(/db$|queue$/, ''), ext = !!k[2];
+  const hasTech = /^(container|component)/.test(kind) || /^(containerdb|containerqueue|componentdb|componentqueue)$/i.test(k[1]!);
+  const id = slug(a[0] ?? ''), label = clean(a[1] ?? id);
+  const tech = hasTech ? a[2] : undefined, desc = hasTech ? a[3] : a[2];
+  const n = b.node(id, label, kind === 'person' ? 'round' : 'rect', scope.at(-1));
+  const extra = [tech && `[${clean(tech)}]`, desc && clean(desc)].filter((x): x is string => !!x);
+  if (extra.length) n.lines = extra;
+  n.style = C4_STYLE[c4StyleKey(kind, ext)] ?? C4_STYLE.system!;
+}
+
 function c4(lines: [string, number][], b: Builder) {
   const scope: string[] = [];
   for (const [s, ln] of lines) {
-    if (!s || s.startsWith("'") || s.startsWith('%%') || /^(!|title\b|LAYOUT_|SHOW_|HIDE_|Update\w+|AddElementTag|AddRelTag|skinparam|left to right)/i.test(s)) continue;
+    if (!s || s.startsWith("'") || s.startsWith('%%') || C4_SKIP.test(s)) continue;
     if (s === '}') { scope.pop(); continue; }
     const m = /^(\w+)\s*\((.*)\)\s*(\{)?\s*$/.exec(s);
     if (!m) { b.bad(ln, `Unrecognised C4 statement "${s.slice(0, 40)}". Use Person(id, "Name", "Description"), System(...), Rel(a, b, "label").`); continue; }
     const [, fn, argText, open] = m;
     const a = splitArgs(argText!);
-    if (/_Boundary$|^Boundary$|^Deployment_Node$|^Node(_L|_R)?$/i.test(fn!)) {
-      b.group(slug(a[0] ?? 'g'), clean(a[1] ?? a[0] ?? ''), scope.at(-1));
-      if (open) scope.push(slug(a[0] ?? 'g'));
-      continue;
-    }
     const rel = /^(Bi)?Rel(_[a-z]+)?$/i.exec(fn!);
-    if (rel) {
-      if (a.length < 2) { b.bad(ln, 'Rel needs at least (from, to).'); continue; }
-      const text = [a[2], a[3] && `[${a[3]}]`].filter(Boolean).join(' ');
-      const back = /Back/i.test(fn!);
-      const [from, to] = back ? [slug(a[1]!), slug(a[0]!)] : [slug(a[0]!), slug(a[1]!)];
-      b.link(from, to, { text: text || undefined, tail: rel[1] ? 'arrow' : undefined });
-      continue;
-    }
-    const k = /^(Person|System|Container|Component|Enterprise|SystemDb|SystemQueue|ContainerDb|ContainerQueue|ComponentDb|ComponentQueue)(_Ext)?$/i.exec(fn!);
-    if (!k) { b.bad(ln, `Unknown C4 element "${fn}".`); continue; }
-    const kind = k[1]!.toLowerCase().replace(/db$|queue$/, ''), ext = !!k[2];
-    const hasTech = /^(container|component)/.test(kind) || /^(containerdb|containerqueue|componentdb|componentqueue)$/i.test(k[1]!);
-    const id = slug(a[0] ?? ''), label = clean(a[1] ?? id);
-    const tech = hasTech ? a[2] : undefined, desc = hasTech ? a[3] : a[2];
-    const n = b.node(id, label, kind === 'person' ? 'round' : 'rect', scope.at(-1));
-    const extra = [tech && `[${clean(tech)}]`, desc && clean(desc)].filter((x): x is string => !!x);
-    if (extra.length) n.lines = extra;
-    let base: string = kind === 'enterprise' ? 'system' : kind;
-    if (kind === 'person') base = ext ? 'personExt' : 'person';
-    else if (ext) base = 'ext';
-    n.style = C4_STYLE[base] ?? C4_STYLE.system!;
+    if (C4_BOUNDARY.test(fn!)) c4Boundary(b, scope, a, !!open);
+    else if (rel) c4Rel(b, fn!, a, !!rel[1], ln);
+    else c4Element(b, scope, fn!, a, ln);
   }
   if (scope.length) b.bad(lines.length ? lines.at(-1)![1] : 1, 'A boundary is never closed with "}".');
 }
@@ -646,106 +918,174 @@ const SHAPE_FOR: Record<string, Shape> = {
 const EP = String.raw`(\[[^\]]+\]|\(\)\s*(?:"[^"]*"|\w+)|"[^"]+"|\([^)]+\)|\w+)`;
 const LINK = new RegExp(String.raw`^${EP}\s*(<)?([-.=]+)(?:\[[^\]]*\])?(?:(?:up|down|left|right|u|d|l|r)[-.]*)?(>|\|>)?\s*${EP}(?:\s*:(.*))?$`);
 const CONTAINERS = /^(node|cloud|package|rectangle|folder|frame|database|storage|component|namespace|together)\b/i;
-function component(lines: [string, number][], b: Builder, mermaid: boolean) {
-  const scope: string[] = [];
-  const cur = () => scope.at(-1);
-  const shapeFor = (kw: string): Shape | undefined => SHAPE_FOR[kw.toLowerCase()];
-  const endpoint = (raw: string, ln: number): string => {
+const PLANT_KEYWORDS = /^(component|node|cloud|package|rectangle|folder|frame|database|storage|artifact|queue|interface|actor|usecase|agent|card|boundary|control|entity|collections|namespace)$/i;
+const COMPONENT_SKIP = /^(skinparam|title|header|footer|legend|hide|show|note|end note|scale|!)/i;
+
+class ComponentParser {
+  private readonly scope: string[] = [];
+  constructor(private readonly lines: [string, number][], private readonly b: Builder, private readonly mermaid: boolean) {}
+
+  run() {
+    const { lines, b } = this;
+    for (const [s, ln] of lines) {
+      if (!s || s.startsWith("'") || s.startsWith('%%') || COMPONENT_SKIP.test(s)) continue;
+      if (this.closeScope(s, ln)) continue;
+      const handled = this.mermaid ? this.architecture(s, ln) : this.plantStatement(s, ln);
+      if (!handled) b.bad(ln, this.mermaid
+        ? `Unrecognised architecture statement "${s.slice(0, 40)}". Use "group", "service id(icon)[Label] in group", "a:R -- L:b".`
+        : `Unrecognised component statement "${s.slice(0, 40)}". Use "component X", "node N { ... }", "[A] --> [B] : label".`);
+    }
+    if (this.scope.length) b.bad(lines.length ? lines.at(-1)![1] : 1, `"${this.scope.at(-1)}" is never closed with "}".`);
+  }
+
+  private cur() { return this.scope.at(-1); }
+
+  private closeScope(s: string, ln: number): boolean {
+    if (s !== '}') return false;
+    if (this.scope.length) this.scope.pop();
+    else this.b.bad(ln, 'Unmatched "}".');
+    return true;
+  }
+
+  private endpoint(raw: string, ln: number): string {
+    const { b } = this;
     const t = raw.trim();
-    let m: RegExpExecArray | null;
-    m = /^\[([^\]]+)\]$/.exec(t);
-    if (m) { const id = slug(m[1]!); b.node(id, clean(m[1]!), undefined, cur()); return id; }
-    m = /^\(\)\s*"?([^"\s][^"]*)"?$/.exec(t);
-    if (m) { const id = slug(m[1]!); b.node(id, clean(m[1]!), 'circle', cur()); return id; }
-    m = /^\(([^)]+)\)$/.exec(t);
-    if (m) { const id = slug(m[1]!); b.node(id, clean(m[1]!), 'stadium', cur()); return id; }
+    const shaped = this.shapedEndpoint(t);
+    if (shaped) return shaped;
     const id = slug(t.replace(/^"|"$/g, ''));
-    if (!b.nodes.has(id) && !b.groups.has(id)) b.node(id, id === t ? t : clean(t), undefined, cur());
+    if (!b.nodes.has(id) && !b.groups.has(id)) b.node(id, id === t ? t : clean(t), undefined, this.cur());
     if (!id) b.bad(ln, `"${raw}" cannot be used as a name.`);
     return id;
-  };
-  for (const [s, ln] of lines) {
-    if (!s || s.startsWith("'") || s.startsWith('%%') || /^(skinparam|title|header|footer|legend|hide|show|note|end note|scale|!)/i.test(s)) continue;
-    let m: RegExpExecArray | null;
-    if (s === '}') {
-      if (scope.length) scope.pop();
-      else b.bad(ln, 'Unmatched "}".');
-      continue;
-    }
-    if (mermaid) {
-      m = /^group\s+(\w+)(?:\(([^)]*)\))?(?:\s*\[([^\]]*)\])?(?:\s*in\s+(\w+))?$/i.exec(s);
-      if (m) { b.group(m[1]!, m[3] ?? m[1]!, m[4]); continue; }
-      m = /^(service|junction)\s+(\w+)(?:\(([^)]*)\))?(?:\s*\[([^\]]*)\])?(?:\s*in\s+(\w+))?$/i.exec(s);
-      if (m) {
-        const junction = m[1]!.toLowerCase() === 'junction';
-        const icon = (m[3] ?? '').toLowerCase();
-        const shape: Shape | undefined = junction ? 'start' : ICON_SHAPE.find(([re]) => re.test(icon))?.[1];
-        b.node(m[2]!, junction ? '' : (m[4] ?? m[2]!), shape, m[5]);
-        continue;
-      }
-      m = /^(\w+)(?:\{group\})?:[LRTB]\s*(<)?--(>)?\s*[LRTB]:(\w+)(?:\{group\})?$/i.exec(s);
-      if (m) {
-        for (const id of [m[1]!, m[4]!]) if (!b.nodes.has(id)) b.bad(ln, `Unknown service "${id}". Declare it with "service ${id}(icon)[Label]".`);
-        b.link(m[1]!, m[4]!, { head: m[3] ? 'arrow' : 'none', tail: m[2] ? 'arrow' : undefined });
-        continue;
-      }
-      b.bad(ln, `Unrecognised architecture statement "${s.slice(0, 40)}". Use "group", "service id(icon)[Label] in group", "a:R -- L:b".`);
-      continue;
-    }
-    // PlantUML component / deployment
-    m = /^(\w+)\s+("[^"]*"|\[[^\]]+\]|[^\s{]+)((?:[\s{].*)?)$/.exec(s);
-    const tail = m ? /^(?:\s+as\s+("[^"]*"|[^\s{]+))?\s*(\{)?$/.exec(m[3]!.replace(/<<[^>]*>>/, '')) : null;
-    if (m && tail && /^(component|node|cloud|package|rectangle|folder|frame|database|storage|artifact|queue|interface|actor|usecase|agent|card|boundary|control|entity|collections|namespace)$/i.test(m[1]!)) {
-      const [, kw, a] = m;
-      const [, bAs, open] = tail;
-      const raw = a!.replace(/^\[|\]$/g, ''), label = clean(raw);
-      const id = bAs ? slug(bAs) : slug(raw);
-      if (open && CONTAINERS.test(kw!)) { b.group(id, label, cur()); scope.push(id); }
-      else b.node(id, label, shapeFor(kw!), cur());
-      continue;
-    }
-    if (/^\[([^\]]+)\]\s*$/.test(s)) { endpoint(s, ln); continue; }
-    m = /^\[([^\]]+)\]\s+as\s+(\w+)\s*$/.exec(s);
-    if (m) { b.node(m[2]!, clean(m[1]!), undefined, cur()); continue; }
-    m = /^\(\)\s*("[^"]*"|\w+)(?:\s+as\s+(\w+))?\s*$/.exec(s);
-    if (m) { b.node(m[2] ?? slug(m[1]!), clean(m[1]!), 'circle', cur()); continue; }
-    m = LINK.exec(s);
-    if (m) {
-      const a = endpoint(m[1]!, ln), z = endpoint(m[5]!, ln);
-      const dotted = m[3]!.includes('.');
-      b.link(a, z, { text: clean(m[6] ?? '') || undefined, line: dotted ? 'dotted' : undefined, head: m[4] ? 'arrow' : 'none', tail: m[2] ? 'arrow' : undefined });
-      continue;
-    }
-    b.bad(ln, `Unrecognised component statement "${s.slice(0, 40)}". Use "component X", "node N { ... }", "[A] --> [B] : label".`);
   }
-  if (scope.length) b.bad(lines.length ? lines.at(-1)![1] : 1, `"${scope.at(-1)}" is never closed with "}".`);
+
+  /** `[name]`, `() name` and `(name)` endpoints; undefined for a plain name. */
+  private shapedEndpoint(t: string): string | undefined {
+    const forms: [RegExp, Shape | undefined][] = [[/^\[([^\]]+)\]$/, undefined], [/^\(\)\s*"?([^"\s][^"]*)"?$/, 'circle'], [/^\(([^)]+)\)$/, 'stadium']];
+    for (const [re, shape] of forms) {
+      const m = re.exec(t);
+      if (m) { const id = slug(m[1]!); this.b.node(id, clean(m[1]!), shape, this.cur()); return id; }
+    }
+    return undefined;
+  }
+
+  // ---- Mermaid architecture
+  private architecture(s: string, ln: number): boolean {
+    return this.archGroup(s) || this.archService(s) || this.archLink(s, ln);
+  }
+
+  private archGroup(s: string): boolean {
+    const m = /^group\s+(\w+)(?:\(([^)]*)\))?(?:\s*\[([^\]]*)\])?(?:\s*in\s+(\w+))?$/i.exec(s);
+    if (!m) return false;
+    this.b.group(m[1]!, m[3] ?? m[1]!, m[4]);
+    return true;
+  }
+
+  private archService(s: string): boolean {
+    const m = /^(service|junction)\s+(\w+)(?:\(([^)]*)\))?(?:\s*\[([^\]]*)\])?(?:\s*in\s+(\w+))?$/i.exec(s);
+    if (!m) return false;
+    const junction = m[1]!.toLowerCase() === 'junction';
+    const icon = (m[3] ?? '').toLowerCase();
+    const shape: Shape | undefined = junction ? 'start' : ICON_SHAPE.find(([re]) => re.test(icon))?.[1];
+    this.b.node(m[2]!, junction ? '' : (m[4] ?? m[2]!), shape, m[5]);
+    return true;
+  }
+
+  private archLink(s: string, ln: number): boolean {
+    const m = /^(\w+)(?:\{group\})?:[LRTB]\s*(<)?--(>)?\s*[LRTB]:(\w+)(?:\{group\})?$/i.exec(s);
+    if (!m) return false;
+    for (const id of [m[1]!, m[4]!]) if (!this.b.nodes.has(id)) this.b.bad(ln, `Unknown service "${id}". Declare it with "service ${id}(icon)[Label]".`);
+    this.b.link(m[1]!, m[4]!, { head: m[3] ? 'arrow' : 'none', tail: m[2] ? 'arrow' : undefined });
+    return true;
+  }
+
+  // ---- PlantUML component / deployment
+  private plantStatement(s: string, ln: number): boolean {
+    return this.declaration(s) || this.bareComponent(s, ln) || this.aliasedComponent(s) || this.interfaceDecl(s) || this.plantLink(s, ln);
+  }
+
+  private declaration(s: string): boolean {
+    const m = /^(\w+)\s+("[^"]*"|\[[^\]]+\]|[^\s{]+)((?:[\s{].*)?)$/.exec(s);
+    if (!m || !PLANT_KEYWORDS.test(m[1]!)) return false;
+    const tail = /^(?:as\s+("[^"]*"|[^\s{]+))?\s*(\{)?$/.exec(m[3]!.replace(/<<[^>]*>>/, '').trim());
+    if (!tail) return false;
+    const [, kw, a] = m;
+    const [, bAs, open] = tail;
+    const raw = a!.replace(/^\[|\]$/g, ''), label = clean(raw);
+    const id = bAs ? slug(bAs) : slug(raw);
+    if (open && CONTAINERS.test(kw!)) { this.b.group(id, label, this.cur()); this.scope.push(id); }
+    else this.b.node(id, label, SHAPE_FOR[kw!.toLowerCase()], this.cur());
+    return true;
+  }
+
+  private bareComponent(s: string, ln: number): boolean {
+    if (!/^\[([^\]]+)\]\s*$/.test(s)) return false;
+    this.endpoint(s, ln);
+    return true;
+  }
+
+  private aliasedComponent(s: string): boolean {
+    const m = /^\[([^\]]+)\]\s+as\s+(\w+)\s*$/.exec(s);
+    if (!m) return false;
+    this.b.node(m[2]!, clean(m[1]!), undefined, this.cur());
+    return true;
+  }
+
+  private interfaceDecl(s: string): boolean {
+    const m = /^\(\)\s*("[^"]*"|\w+)(?:\s+as\s+(\w+))?\s*$/.exec(s);
+    if (!m) return false;
+    this.b.node(m[2] ?? slug(m[1]!), clean(m[1]!), 'circle', this.cur());
+    return true;
+  }
+
+  private plantLink(s: string, ln: number): boolean {
+    const m = LINK.exec(s);
+    if (!m) return false;
+    const a = this.endpoint(m[1]!, ln), z = this.endpoint(m[5]!, ln);
+    this.b.link(a, z, { text: clean(m[6] ?? '') || undefined, line: m[3]!.includes('.') ? 'dotted' : undefined, head: m[4] ? 'arrow' : 'none', tail: m[2] ? 'arrow' : undefined });
+    return true;
+  }
+}
+
+function component(lines: [string, number][], b: Builder, mermaid: boolean) {
+  new ComponentParser(lines, b, mermaid).run();
 }
 
 // ---------------------------------------------------------------- dispatcher
+
+const HEAD_KINDS: [RegExp, Kind][] = [
+  [/^stateDiagram(?:-v2)?\b/i, 'state'],
+  [/^classDiagram\b/i, 'class'],
+  [/^erDiagram\b/i, 'er'],
+  [/^(?:gantt|@startgantt)\b/i, 'gantt'],
+  [/^C4(?:Context|Container|Component|Dynamic|Deployment)\b/i, 'c4'],
+  [/^architecture(?:-beta)?\b/i, 'component'],
+  [/^(?:mindmap|@startmindmap)\b/i, 'mindmap'],
+];
+
+/** Which kind a `@startuml` body is, from its statements. */
+function sniffUml(rows: string[]): Kind | undefined {
+  const body = rows.filter((r) => r && !r.startsWith("'") && !/^@(?:start|end)uml/i.test(r));
+  const has = (re: RegExp) => body.some((r) => re.test(r));
+  const looksActivity = body.some((r) => /^(start|stop|end|if\s*\(|while\s*\(|repeat\b|fork\b|partition\b|:)/i.test(r) && !/^end\s+(?:note|fork)/i.test(r));
+  const looksSequence = body.some((r) => /(?:^(?:participant|actor|class|state|entity)\b|->)/.test(r) && !r.startsWith('->'));
+  if (looksActivity && !looksSequence) return 'activity';
+  if (has(/^(Person|System|Container|Component|Enterprise)(Db|Queue)?(_Ext)?\(|^!include\s.*C4/i)) return 'c4';
+  if (has(/^state\b|\[\*\]/)) return 'state';
+  if (has(/^(class|interface|abstract|enum)\s+\w+/i)) return 'class';
+  if (has(/^(component|node|cloud|package|rectangle|folder|frame|database|storage|artifact|queue|usecase)\s+\S+|^\[[^\]]+\]\s*(?:<?[-.]+|as\b)/i) && !has(/^participant\b/i)) return 'component';
+  if (has(/^entity\b/i) && has(/[|}o][|o{}]--[|o{}][|o{}]/)) return 'er';
+  if (body.some((r) => r.startsWith(':')) && !has(/^\w+\s*-+>/)) return 'activity';
+  return undefined;
+}
 
 /** Which extra kind, if any, a source is. Returns undefined for flowchart/sequence. */
 export function sniffKind(source: string): Kind | undefined {
   const rows = source.split(/\r?\n/).map((r) => r.trim());
   const first = rows.find((r) => r && !r.startsWith('%%') && r !== '---');
   if (!first) return undefined;
-  if (/^stateDiagram(?:-v2)?\b/i.test(first)) return 'state';
-  if (/^classDiagram\b/i.test(first)) return 'class';
-  if (/^erDiagram\b/i.test(first)) return 'er';
-  if (/^gantt\b/i.test(first) || /^@startgantt\b/i.test(first)) return 'gantt';
-  if (/^C4(?:Context|Container|Component|Dynamic|Deployment)\b/i.test(first)) return 'c4';
-  if (/^architecture(?:-beta)?\b/i.test(first)) return 'component';
-  if (/^mindmap\b/i.test(first) || /^@startmindmap\b/i.test(first)) return 'mindmap';
-  if (/^@start(?:uml)?\b/i.test(first) && /^@startuml/i.test(first)) {
-    const body = rows.filter((r) => r && !r.startsWith("'") && !/^@(?:start|end)uml/i.test(r));
-    if (body.some((r) => /^(start|stop|end|if\s*\(|while\s*\(|repeat\b|fork\b|partition\b|:)/i.test(r) && !/^end\s+(?:note|fork)/i.test(r)) && !body.some((r) => /(?:^(?:participant|actor|class|state|entity)\b|->)/.test(r) && !r.startsWith('->'))) return 'activity';
-    if (body.some((r) => /^(Person|System|Container|Component|Enterprise)(Db|Queue)?(_Ext)?\(|^!include\s.*C4/i.test(r))) return 'c4';
-    if (body.some((r) => /^state\b|\[\*\]/.test(r))) return 'state';
-    if (body.some((r) => /^(class|interface|abstract|enum)\s+\w+/i.test(r))) return 'class';
-    if (body.some((r) => /^(component|node|cloud|package|rectangle|folder|frame|database|storage|artifact|queue|usecase)\s+\S+|^\[[^\]]+\]\s*(?:<?[-.]+|as\b)/i.test(r)) && !body.some((r) => /^participant\b/i.test(r))) return 'component';
-    if (body.some((r) => /^entity\b/i.test(r)) && body.some((r) => /[|}o][|o{}]--[|o{}][|o{}]/.test(r))) return 'er';
-    if (body.some((r) => /^:/.test(r)) && !body.some((r) => /^\w+\s*-+>/.test(r))) return 'activity';
-  }
-  return undefined;
+  const head = HEAD_KINDS.find(([re]) => re.test(first));
+  if (head) return head[1];
+  return /^@startuml\b/i.test(first) ? sniffUml(rows) : undefined;
 }
 
 const DIRS: Record<string, Diagram['direction']> = { LR: 'LR', RL: 'RL', TB: 'TB', TD: 'TB', BT: 'BT' };

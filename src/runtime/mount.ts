@@ -31,6 +31,74 @@ function button(create: ElementFactory, label: string, text: string, onClick: ()
   return b;
 }
 
+/** Reveal lays slides out in a fixed pixel box and scales it, so viewport units (vh) are wrong there:
+ *  fit the diagram to a share of the slide box instead, leaving room for a title or text around it. */
+function slideFitHeight(container: HTMLElement, win: Window & typeof globalThis, svg: SVGSVGElement, hv: string | undefined): string {
+  const box = container.closest<HTMLElement>('.slides');
+  const slideH = box ? Number.parseFloat(win.getComputedStyle(box).height) : NaN;
+  const full = Number.isFinite(slideH) && slideH > 0 ? slideH : 700;
+  let want = Infinity;
+  if (hv && /^[\d.]+vh$/.test(hv)) want = (Number.parseFloat(hv) / 100) * full;
+  else if (hv && /^[\d.]+px$/.test(hv)) want = Number.parseFloat(hv);
+  // Give the diagram what the slide has left after its title and text; never less than a third, never more than 85%.
+  const slide = container.closest<HTMLElement>('section');
+  let room = full * 0.72;
+  if (slide && slide.scrollHeight > 0) {
+    svg.classList.add('fm-measure'); // collapses the diagram so its height is not counted
+    const others = slide.scrollHeight; // everything on the slide except the diagram
+    svg.classList.remove('fm-measure');
+    room = full - others - 24;
+  }
+  return `${Math.round(Math.min(want, Math.max(full * 0.33, Math.min(room, full * 0.85))))}px`;
+}
+
+function backgroundSelect(create: ElementFactory, opts: MountOptions): HTMLSelectElement {
+  const sel = create('select');
+  sel.className = 'fm-speed fm-mode'; sel.setAttribute('aria-label', 'Drawing background');
+  for (const [v, l] of [['default', 'Background: default'], ['light', 'Background: light'], ['dark', 'Background: dark'], ['none', 'Background: none (match theme)']] as const) {
+    const o = create('option'); o.value = v; o.textContent = l; sel.appendChild(o);
+  }
+  sel.value = ['light', 'dark', 'none'].includes(opts.paperChoice ?? '') ? opts.paperChoice! : 'default';
+  sel.addEventListener('change', () => opts.onPaper!(sel.value));
+  return sel;
+}
+
+/** In slides the bar floats over the diagram (it fades in on hover) and is drawn at screen size:
+ *  Reveal scales the whole slide, which would otherwise make the controls huge. Returns a cleanup. */
+function unscaleBarInSlide(win: Window & typeof globalThis, wrap: HTMLElement, bar: HTMLElement, refit: () => void): () => void {
+  wrap.classList.add('fm-in-slide');
+  const fix = () => {
+    const s = wrap.offsetWidth ? wrap.getBoundingClientRect().width / wrap.offsetWidth : 1;
+    const k = Number.isFinite(s) && s > 0 ? s : 1;
+    bar.classList.add('fm-bar-scaled');
+    bar.style.transform = `scale(${1 / k})`;
+    bar.style.width = `${k * 100}%`;
+  };
+  fix();
+  win.setTimeout(refit, 400); // after fonts and the slide layout settle
+  win.addEventListener('resize', fix); win.addEventListener('resize', refit);
+  const ResizeObserverCtor = win.ResizeObserver;
+  const ro = typeof ResizeObserverCtor === 'function' ? new ResizeObserverCtor(fix) : undefined;
+  ro?.observe(wrap);
+  return () => { win.removeEventListener('resize', fix); win.removeEventListener('resize', refit); ro?.disconnect(); };
+}
+
+/** Pause when offscreen; resume only if it was playing before. Returns the observer, if the browser has one. */
+function pauseWhenHidden(win: Window & typeof globalThis, wrap: HTMLElement, player: () => Player, refit: () => void): IntersectionObserver | undefined {
+  let resumeOnVisible = false;
+  const IntersectionObserverCtor = win.IntersectionObserver;
+  if (typeof IntersectionObserverCtor !== 'function') return undefined;
+  const io = new IntersectionObserverCtor((entries) => {
+    const visible = entries.some((e) => e.isIntersecting);
+    const p = player();
+    if (!visible && p.playing) { resumeOnVisible = true; p.pause(); }
+    else if (visible && resumeOnVisible) { resumeOnVisible = false; p.play(); }
+    if (visible) refit();
+  });
+  io.observe(wrap);
+  return io;
+}
+
 /** Render a model into `container`, attach the player and controls. Call destroy() to release everything. */
 export function mountModel(container: HTMLElement, model: Model, opts: MountOptions = {}): Mounted {
   const doc = container.ownerDocument;
@@ -60,27 +128,7 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
     if (inSlides && v === 'normal') continue;
     const o = create('option'); o.value = v; o.textContent = l; modeSel.appendChild(o);
   }
-  // Reveal lays slides out in a fixed pixel box and scales it, so viewport units (vh) are wrong there:
-  // fit the diagram to a share of the slide box instead, leaving room for a title or text around it.
-  const fitHeight = (): string | undefined => {
-    if (!inSlides) return hv;
-    const box = container.closest<HTMLElement>('.slides');
-    const slideH = box ? Number.parseFloat(win.getComputedStyle(box).height) : NaN;
-    const full = Number.isFinite(slideH) && slideH > 0 ? slideH : 700;
-    let want = Infinity;
-    if (hv && /^[\d.]+vh$/.test(hv)) want = (Number.parseFloat(hv) / 100) * full;
-    else if (hv && /^[\d.]+px$/.test(hv)) want = Number.parseFloat(hv);
-    // Give the diagram what the slide has left after its title and text; never less than a third, never more than 85%.
-    const slide = container.closest<HTMLElement>('section');
-    let room = full * 0.72;
-    if (slide && slide.scrollHeight > 0) {
-      svg.classList.add('fm-measure'); // collapses the diagram so its height is not counted
-      const others = slide.scrollHeight; // everything on the slide except the diagram
-      svg.classList.remove('fm-measure');
-      room = full - others - 24;
-    }
-    return `${Math.round(Math.min(want, Math.max(full * 0.33, Math.min(room, full * 0.85))))}px`;
-  };
+  const fitHeight = (): string | undefined => (inSlides ? slideFitHeight(container, win, svg, hv) : hv);
   const applyMode = (mm: Mode) => {
     mode = mm; modeSel.value = mm;
     svg.style.setProperty('--fm-diagram-max-height', mm === 'normal' ? 'none' : (fitHeight() ?? '75vh'));
@@ -159,14 +207,7 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   // The toggle and screen mode are always visible, including in full screen.
   const parts: HTMLElement[] = [pb, toggle, modeSel];
   if (model.backdrop && opts.onPaper) {
-    const sel = create('select');
-    sel.className = 'fm-speed fm-mode'; sel.setAttribute('aria-label', 'Drawing background');
-    for (const [v, l] of [['default', 'Background: default'], ['light', 'Background: light'], ['dark', 'Background: dark'], ['none', 'Background: none (match theme)']] as const) {
-      const o = create('option'); o.value = v; o.textContent = l; sel.appendChild(o);
-    }
-    sel.value = ['light', 'dark', 'none'].includes(opts.paperChoice ?? '') ? opts.paperChoice! : 'default';
-    sel.addEventListener('change', () => opts.onPaper!(sel.value));
-    parts.push(sel);
+    parts.push(backgroundSelect(create, opts));
   }
   bar.append(...parts);
   if ((model.view?.controlsPosition ?? 'top') === 'top') svg.before(bar);
@@ -174,40 +215,9 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   bar.classList.add(model.view?.controlsPosition === 'bottom' ? 'fm-bar-bottom' : 'fm-bar-top');
   sync();
 
-  // In slides the bar floats over the diagram (it fades in on hover) and is drawn at screen size:
-  // Reveal scales the whole slide, which would otherwise make the controls huge.
-  let unscale: (() => void) | undefined;
-  if (inSlides) {
-    wrap.classList.add('fm-in-slide');
-    const fix = () => {
-      const s = wrap.offsetWidth ? wrap.getBoundingClientRect().width / wrap.offsetWidth : 1;
-      const k = Number.isFinite(s) && s > 0 ? s : 1;
-      bar.classList.add('fm-bar-scaled');
-      bar.style.transform = `scale(${1 / k})`;
-      bar.style.width = `${k * 100}%`;
-    };
-    fix();
-    const refit = () => { if (mode === 'fit') applyMode('fit'); };
-    win.setTimeout(refit, 400); // after fonts and the slide layout settle
-    win.addEventListener('resize', fix); win.addEventListener('resize', refit);
-    const ResizeObserverCtor = win.ResizeObserver;
-    const ro = typeof ResizeObserverCtor === 'function' ? new ResizeObserverCtor(fix) : undefined;
-    ro?.observe(wrap);
-    unscale = () => { win.removeEventListener('resize', fix); win.removeEventListener('resize', refit); ro?.disconnect(); };
-  }
-
-  // Pause when offscreen; resume only if it was playing before.
-  let resumeOnVisible = false;
-  const IntersectionObserverCtor = win.IntersectionObserver;
-  const io = typeof IntersectionObserverCtor === 'function'
-    ? new IntersectionObserverCtor((entries) => {
-        const visible = entries.some((e) => e.isIntersecting);
-        if (!visible && player.playing) { resumeOnVisible = true; player.pause(); }
-        else if (visible && resumeOnVisible) { resumeOnVisible = false; player.play(); }
-        if (visible && inSlides && mode === 'fit') applyMode('fit');
-      })
-    : undefined;
-  io?.observe(wrap);
+  const refit = () => { if (inSlides && mode === 'fit') applyMode('fit'); };
+  const unscale = inSlides ? unscaleBarInSlide(win, wrap, bar, refit) : undefined;
+  const io = pauseWhenHidden(win, wrap, () => player, refit);
 
   if (reduced) player.seek(player.total); // reduced motion: show the finished state, no autoplay
   else if (opts.autoplay ?? model.animation.autoplay) player.play();
