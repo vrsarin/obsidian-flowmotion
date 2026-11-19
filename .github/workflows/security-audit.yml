@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: prod
     container:
-      image: semgrep/semgrep
+      image: semgrep/semgrep:1.186.0
     permissions:
       contents: read
       actions: read
