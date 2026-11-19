@@ -29,21 +29,22 @@ jobs:
   semgrep:
     name: Semgrep
     runs-on: ubuntu-latest
+    environment: prod
     container:
       image: semgrep/semgrep
     permissions:
       contents: read
       actions: read
       security-events: write
+    env:
+      SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Scan with Semgrep AppSec Platform
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && env.SEMGREP_APP_TOKEN != ''
         run: semgrep ci --no-suppress-errors
-        env:
-          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
-      - name: Scan fork pull request with Semgrep Community Edition
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+      - name: Scan without Semgrep AppSec Platform credentials
+        if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) || env.SEMGREP_APP_TOKEN == ''
         run: semgrep scan --config p/security-audit --error --sarif --output semgrep.sarif
       - name: Publish Semgrep findings to GitHub Code scanning
         if: always() && hashFiles('semgrep.sarif') != ''
@@ -56,6 +57,7 @@ jobs:
     name: Snyk
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    environment: prod
     permissions:
       contents: read
       actions: read
@@ -111,6 +113,7 @@ jobs:
     name: SonarCloud
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    environment: prod
     permissions:
       contents: read
       pull-requests: read
