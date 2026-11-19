@@ -54,7 +54,7 @@ build:
 	$(NPM) run build
 
 test:
-	$(NPM) test
+	$(NPM) run test:coverage
 
 test-e2e:
 	$(NPM) run test:e2e

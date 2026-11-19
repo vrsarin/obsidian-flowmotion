@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main,"release/**"]
+    branches: [main, "release/**", "hotfix/**"]
   workflow_dispatch:
 
 permissions:
@@ -149,10 +149,22 @@ jobs:
             -Dsonar.coverage.exclusions=**/*.d.ts,**/*.d.mts
             -Dsonar.qualitygate.wait=true
 
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
+        with:
+          fail-on-severity: moderate
+
   security-gate:
     name: Security gate
     if: always()
-    needs: [lint, semgrep, snyk, sonarcloud]
+    needs: [lint, semgrep, snyk, sonarcloud, dependency-review]
     runs-on: ubuntu-latest
     steps:
       - name: Require blocking checks to pass
@@ -161,10 +173,16 @@ jobs:
           SEMGREP_RESULT: ${{ needs.semgrep.result }}
           SNYK_RESULT: ${{ needs.snyk.result }}
           SONAR_RESULT: ${{ needs.sonarcloud.result }}
+          DEPENDENCY_REVIEW_RESULT: ${{ needs.dependency-review.result }}
+          IS_PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
           IS_FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
         run: |
           if [ "$LINT_RESULT" != "success" ] || [ "$SEMGREP_RESULT" != "success" ]; then
             echo "Build, tests, typecheck, or Semgrep failed. Fix findings before merging."
+            exit 1
+          fi
+          if [ "$IS_PULL_REQUEST" = "true" ] && [ "$DEPENDENCY_REVIEW_RESULT" != "success" ]; then
+            echo "Dependency review failed. Fix vulnerable dependency changes before merging."
             exit 1
           fi
           if [ "$IS_FORK_PR" != "true" ] && { [ "$SNYK_RESULT" != "success" ] || [ "$SONAR_RESULT" != "success" ]; }; then
