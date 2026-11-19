@@ -1,6 +1,6 @@
 {
   "name": "flowmotion",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "private": true,
   "description": "Event-driven animated architecture diagrams from YAML (SVG-first, Obsidian plugin).",
   "type": "module",
@@ -9,6 +9,7 @@
     "schema": "node scripts/build-schema.mjs",
     "examples": "tsx scripts/build-examples.ts",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "install-plugin": "node scripts/install-plugin.mjs",
     "lint": "eslint .",
@@ -28,6 +29,7 @@
     "@eslint/js": "^10.0.1",
     "@types/mocha": "^10.0.10",
     "@types/node": "^26.6.6",
+    "@vitest/coverage-v8": "^5.1.1",
     "@wdio/cli": "^10.2.0",
     "@wdio/local-runner": "^10.2.0",
     "@wdio/mocha-framework": "^10.2.0",

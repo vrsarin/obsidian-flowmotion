@@ -127,6 +127,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - run: npm run test:coverage
       - name: Analyze with SonarCloud
         uses: SonarSource/sonarqube-scan-action@59202af334b4ba7b5db01b701b8e79f8b3bef0f4
         env:
@@ -137,6 +138,8 @@ jobs:
             -Dsonar.projectKey=vrsarin_obsidian-flowmotion
             -Dsonar.organization=vrsarin
             -Dsonar.sources=src
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+            -Dsonar.coverage.exclusions=**/*.d.ts,**/*.d.mts
             -Dsonar.qualitygate.wait=true
 
   security-gate:
