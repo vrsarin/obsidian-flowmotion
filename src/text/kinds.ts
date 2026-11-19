@@ -6,7 +6,7 @@ import type { TextProblem } from './parse';
 /** Diagram kinds beyond flowchart/sequence. Each parser fills a Builder; `finish` makes the shared Diagram model. */
 export type Kind = 'activity' | 'state' | 'class' | 'er' | 'mindmap' | 'gantt' | 'c4' | 'component';
 
-const clean = (s: string) => s.replace(/<br\s*\/?>/gi, ' ').replaceAll('\\n', ' ').replace(/^["']|["']$/g, '').replace(/\s+/g, ' ').trim();
+const clean = (s: string) => s.replace(/<br\s*\/?>/gi, ' ').replaceAll(String.raw`\n`, ' ').replace(/^["']|["']$/g, '').replace(/\s+/g, ' ').trim();
 const slug = (s: string) => s.replace(/\W+/g, '_').replace(/^_+|_+$/g, '') || 'x';
 
 class Builder {
@@ -82,7 +82,7 @@ function activity(lines: [string, number][], b: Builder) {
   while (i < lines.length) {
     const [s, ln] = lines[i]!; i++;
     if (!s || s.startsWith("'") || /^(skinparam|title|header|footer|legend|hide|show|left to right|top to bottom)\b/i.test(s)) continue;
-    const t = s.replace(/;\s*$/, '');
+    const t = s.replace(/;$/, '').trimEnd();
     let m: RegExpExecArray | null;
     if (/^start\b/i.test(t)) { add('Start', 'start', 's'); continue; }
     if (/^(stop|end)\s*$/i.test(t)) { if (front.length) { add('End', 'end', 'e'); front = []; } continue; }
@@ -94,7 +94,7 @@ function activity(lines: [string, number][], b: Builder) {
       i++;
       continue;
     }
-    m = /^->\s*(.*)$/.exec(t);
+    m = /^->(.*)$/.exec(t);
     if (m) { arrowText = clean(m[1]!) || undefined; continue; }
     if (s.startsWith(':')) { // action, possibly several lines until ';'
       let text = s.slice(1);
@@ -103,7 +103,7 @@ function activity(lines: [string, number][], b: Builder) {
       add(clean(text), 'round', 'a');
       continue;
     }
-    m = /^(?:partition|package|rectangle|group|card)\s+("[^"]*"|\S+)\s*\{?\s*$/i.exec(t);
+    m = /^(?:partition|package|rectangle|group|card)\s+("[^"]*"|\S+)\s*\{?$/i.exec(t);
     if (m) {
       const label = clean(m[1]!), id = b.fresh('g_') + slug(label);
       b.group(id, label, grp());
@@ -118,7 +118,7 @@ function activity(lines: [string, number][], b: Builder) {
       front = [{ from: id, text: m[2] !== undefined ? clean(m[2]) : 'yes' }];
       continue;
     }
-    m = /^else\s*(?:\((.*)\))?\s*$/i.exec(t) ?? /^elseif\s*\((.*?)\)\s*(?:then\s*(?:\((.*)\))?)?\s*$/i.exec(t);
+    m = /^else\s*(?:\((.*)\))?$/i.exec(t) ?? /^elseif\s*\((.*?)\)\s*(?:then\s*(?:\((.*)\))?)?$/i.exec(t);
     if (m) {
       const top = stack.at(-1);
       if (top?.kind !== 'if') { b.bad(ln, '"else" without "if".'); continue; }
@@ -146,14 +146,14 @@ function activity(lines: [string, number][], b: Builder) {
       front = out;
       continue;
     }
-    m = /^while\s*\((.*?)\)\s*(?:is\s*\((.*)\))?\s*$/i.exec(t);
+    m = /^while\s*\((.*?)\)\s*(?:is\s*\((.*)\))?$/i.exec(t);
     if (m) {
       const id = add(clean(m[1]!), 'diamond', 'w');
       front = [{ from: id, text: m[2] !== undefined ? clean(m[2]) : 'yes' }];
       stack.push({ kind: 'while', head: id });
       continue;
     }
-    m = /^endwhile\s*(?:\((.*)\))?\s*$/i.exec(t);
+    m = /^endwhile\s*(?:\((.*)\))?$/i.exec(t);
     if (m) {
       const top = stack.pop();
       if (top?.kind !== 'while') { b.bad(ln, '"endwhile" without "while".'); continue; }
@@ -162,7 +162,7 @@ function activity(lines: [string, number][], b: Builder) {
       continue;
     }
     if (/^repeat\s*$/i.test(t)) { const id = b.fresh('r'); b.node(id, '', 'circle', grp()); b.nodes.get(id)!.label = ' '; attach(id); stack.push({ kind: 'repeat', top: id }); continue; }
-    m = /^repeat\s*while\s*\((.*?)\)\s*(?:is\s*\((.*)\))?\s*(?:not\s*\((.*)\))?\s*$/i.exec(t);
+    m = /^repeat\s*while\s*\((.*?)\)\s*(?:is\s*\((.*)\))?\s*(?:not\s*\((.*)\))?$/i.exec(t);
     if (m) {
       const top = stack.pop();
       if (top?.kind !== 'repeat') { b.bad(ln, '"repeat while" without "repeat".'); continue; }
@@ -232,14 +232,14 @@ function state(lines: [string, number][], b: Builder) {
   for (const [s, ln] of lines) {
     if (!s || s.startsWith("'") || /^(direction|skinparam|hide|title|scale|note|end note)\b/i.test(s)) continue;
     let m: RegExpExecArray | null;
-    m = /^state\s+"([^"]*)"\s+as\s+(\w+)\s*(?:<<(\w+)>>)?\s*(\{)?\s*$/i.exec(s);
+    m = /^state\s+"([^"]*)"\s+as\s+(\w+)\s*(?:<<(\w+)>>)?\s*(\{)?$/i.exec(s);
     if (m) {
       alias.set(m[2]!, m[2]!);
       if (m[4]) { b.group(m[2]!, clean(m[1]!), cur()); scope.push(m[2]!); }
       else b.node(m[2]!, clean(m[1]!), m[3] ? stereo(m[3]) : 'round', cur());
       continue;
     }
-    m = /^state\s+(\w+)\s*(?:<<(\w+)>>)?\s*(\{)?\s*$/i.exec(s);
+    m = /^state\s+(\w+)\s*(?:<<(\w+)>>)?\s*(\{)?$/i.exec(s);
     if (m) {
       if (m[3]) { b.group(m[1]!, m[1]!.replaceAll('_', ' '), cur()); scope.push(m[1]!); }
       else b.node(m[1]!, m[2] ? '' : m[1]!.replaceAll('_', ' '), m[2] ? stereo(m[2]) : 'round', cur());
@@ -251,13 +251,13 @@ function state(lines: [string, number][], b: Builder) {
       continue;
     }
     if (s === '--' || s === '||') continue; // concurrent regions: drawn as one group
-    m = /^(\[\*\]|[\w"]+)\s*(-+>|\.+>|=+>)\s*(\[\*\]|[\w"]+)\s*(?::\s*(.*))?$/.exec(s);
+    m = /^(\[\*\]|[\w"]+)\s*([-.=]+>)\s*(\[\*\]|[\w"]+)(?:\s*:(.*))?$/.exec(s);
     if (m) {
       const a = ensure(ref(m[1]!, ln), false), z = ensure(ref(m[3]!, ln), true);
-      b.link(a, z, { text: m[4] ? clean(m[4]) : undefined, line: m[2]!.startsWith('.') ? 'dotted' : undefined });
+      b.link(a, z, { text: clean(m[4] ?? '') || undefined, line: m[2]!.startsWith('.') ? 'dotted' : undefined });
       continue;
     }
-    m = /^(\w+)\s*:\s*(.+)$/.exec(s);
+    m = /^(\w+)\s*:(.+)$/.exec(s);
     if (m) { // description line
       const id = ensure(m[1]!, false), n = b.nodes.get(id)!;
       n.lines = [...(n.lines ?? []), clean(m[2]!)];
@@ -316,7 +316,7 @@ function classes(lines: [string, number][], b: Builder) {
       else member(open, s);
       continue;
     }
-    m = /^(?:(abstract|interface|enum)\s+)?class\s+(\w+)(?:\s*<<(\w+)>>)?\s*(\{)?\s*(?:\{\s*)?$/i.exec(s) ?? /^(interface|abstract class|abstract|enum)\s+(\w+)\s*(\{)?\s*$/i.exec(s);
+    m = /^(?:(abstract|interface|enum)\s+)?class\s+(\w+)(?:\s*<<(\w+)>>)?\s*(\{)?\s*(?:\{)?$/i.exec(s) ?? /^(interface|abstract class|abstract|enum)\s+(\w+)\s*(\{)?$/i.exec(s);
     if (m) {
       const kind = (m[1] && /interface|enum|abstract/i.test(m[1]) ? m[1] : /^(\S+)/.exec(s)![1]!).replace(/\s*class/i, '').toLowerCase();
       const n = cls(m[2]!);
@@ -325,14 +325,14 @@ function classes(lines: [string, number][], b: Builder) {
       if (/\{\s*$/.test(s)) open = n;
       continue;
     }
-    m = /^class\s+(\w+)\s*(\{)?\s*$/i.exec(s);
+    m = /^class\s+(\w+)\s*(\{)?$/i.exec(s);
     if (m) {
       const n = cls(m[1]!);
       if (m[2]) open = n;
       continue;
     }
-    m = /^(\w+)\s*:\s*(.+)$/.exec(s);
-    if (m && !/[-.][-.>|*o]/.test(m[2]!.slice(0, 2)) && !REL.test(s)) {
+    m = /^(\w+)\s*:(.+)$/.exec(s);
+    if (m && !/[-.][-.>|*o]/.test(m[2]!.trimStart().slice(0, 2)) && !REL.test(s)) {
       member(cls(m[1]!), m[2]!);
       continue;
     }
@@ -376,7 +376,7 @@ function er(lines: [string, number][], b: Builder) {
     }
     m = /^(\w+)\s*\{\s*$/.exec(s);
     if (m) { open = ent(m[1]!); continue; }
-    m = /^entity\s+("[^"]*"|\w+)(?:\s+as\s+(\w+))?\s*(\{)?\s*$/i.exec(s);
+    m = /^entity\s+("[^"]*"|\w+)(?:\s+as\s+(\w+))?\s*(\{)?$/i.exec(s);
     if (m) {
       const id = m[2] ?? slug(m[1]!), n = ent(id);
       if (m[2]) n.label = clean(m[1]!);
@@ -384,11 +384,11 @@ function er(lines: [string, number][], b: Builder) {
       continue;
     }
     // Mermaid: A ||--o{ B : label     PlantUML: A ||--o{ B : label (same tokens)
-    m = /^(\w+)\s+([|}o][|o{}]|\|\{|o\{|\}\||\}o)\s*(--|\.\.)\s*([|o{}][|o{}])\s+(\w+)\s*(?::\s*(.*))?$/.exec(s);
+    m = /^(\w+)\s+([|}o][|o{}])\s*(--|\.\.)\s*([|o{}][|o{}])\s+(\w+)(?:\s*:(.*))?$/.exec(s);
     if (m) {
       const [, a, l, body, r, z, label] = m;
       ent(a!); ent(z!);
-      b.link(a!, z!, { text: label ? clean(label) : undefined, line: body === '..' ? 'dotted' : undefined, head: 'none', tailLabel: CARD[l!] ?? l, headLabel: CARD[flip(r!)] ?? r });
+      b.link(a!, z!, { text: clean(label ?? '') || undefined, line: body === '..' ? 'dotted' : undefined, head: 'none', tailLabel: CARD[l!] ?? l, headLabel: CARD[flip(r!)] ?? r });
       continue;
     }
     b.bad(ln, `Unrecognised ER statement "${s.slice(0, 40)}". Use "A ||--o{ B : has" or "ENTITY { type name PK }".`);
@@ -405,8 +405,8 @@ function mindmap(lines: [string, number][], b: Builder, plant: boolean) {
     const t0 = raw.replaceAll('\t', '  ');
     if (!t0.trim() || t0.trim().startsWith('%%') || t0.trim().startsWith("'")) continue;
     let depth: number, text: string;
-    const pm = plant ? /^([*+-]+)(?:\[#\w+\])?\s*_?\s*(.*)$/.exec(t0.trim()) : null;
-    if (pm) { depth = pm[1]!.length - 1; text = pm[2]!; }
+    const pm = plant ? /^([*+-]+)(?:\[#\w+\])?\s*_?(.*)$/.exec(t0.trim()) : null;
+    if (pm) { depth = pm[1]!.length - 1; text = pm[2]!.trimStart(); }
     else { depth = Math.floor((/^ */.exec(t0)![0]).length / 2); text = t0.trim(); }
     // Mermaid shape wrappers: id((text)), id(text), id[text], ::icon lines
     if (text.startsWith('::')) continue;
@@ -490,9 +490,9 @@ function gantt(lines: [string, number][], b: Builder, plant: boolean): GanttDef 
     if (!s || s.startsWith("'") || s.startsWith('%%')) continue;
     let m: RegExpExecArray | null;
     if (!plant) {
-      m = /^title\s+(.+)$/i.exec(s);
+      m = /^title\s(.+)$/i.exec(s);
       if (m) { title = clean(m[1]!); continue; }
-      m = /^section\s+(.+)$/i.exec(s);
+      m = /^section\s(.+)$/i.exec(s);
       if (m) { section = sectionId(clean(m[1]!)); continue; }
       if (/^(dateFormat|axisFormat|excludes|includes|todayMarker|tickInterval|weekday|weekend|accTitle|accDescr|click)\b/i.test(s)) continue;
       const k = s.indexOf(':');
@@ -518,16 +518,16 @@ function gantt(lines: [string, number][], b: Builder, plant: boolean): GanttDef 
     }
     // PlantUML gantt
     if (/^(?:saturday|sunday|monday|tuesday|wednesday|thursday|friday|\d{4}-\d{2}-\d{2})\b.*\b(?:are|is)\s+(?:closed|open)/i.test(s) || /^(?:language|printscale|scale|hide|today|Project scale|footer|header|legend)\b/i.test(s)) continue;
-    m = /^title\s+(.+)$/i.exec(s);
+    m = /^title\s(.+)$/i.exec(s);
     if (m) { title = clean(m[1]!); continue; }
     m = /^project\s+starts\s+(?:the\s+|on\s+)?(\d{4}-\d{2}-\d{2})/i.exec(s);
     if (m) { projectStart = toDay(m[1]!); continue; }
-    m = /^--\s*(.*?)\s*--$/.exec(s);
-    if (m) { section = sectionId(m[1]!); continue; }
-    m = /^(then\s+)?\[([^\]]+)\]\s+(.*)$/i.exec(s);
+    m = /^--(.*?)--$/.exec(s);
+    if (m) { section = sectionId(m[1]!.trim()); continue; }
+    m = /^(then\s+)?\[([^\]]+)\]\s(.*)$/i.exec(s);
     if (m) {
       const t = task(m[2]!, m[2]!);
-      const rest = m[3]!;
+      const rest = m[3]!.trimStart();
       if (m[1]) { const prev = specs[specs.indexOf(t) - 1]; if (prev) t.after = [prev.id]; }
       if (/^(?:is|are)\s/i.test(rest)) continue; // colour, completion, deleted: cosmetic
       if (/^as\s/i.test(rest)) continue;
@@ -642,6 +642,8 @@ const SHAPE_FOR: Record<string, Shape> = {
   database: 'cylinder', storage: 'cylinder', queue: 'stadium', interface: 'circle', usecase: 'circle',
   cloud: 'round', actor: 'round', boundary: 'round', control: 'round',
 };
+const EP = String.raw`(\[[^\]]+\]|\(\)\s*(?:"[^"]*"|\w+)|"[^"]+"|\([^)]+\)|\w+)`;
+const LINK = new RegExp(String.raw`^${EP}\s*(<)?([-.=]+)(?:\[[^\]]*\])?(?:(?:up|down|left|right|u|d|l|r)[-.]*)?(>|\|>)?\s*${EP}(?:\s*:(.*))?$`);
 const CONTAINERS = /^(node|cloud|package|rectangle|folder|frame|database|storage|component|namespace|together)\b/i;
 function component(lines: [string, number][], b: Builder, mermaid: boolean) {
   const scope: string[] = [];
@@ -652,7 +654,7 @@ function component(lines: [string, number][], b: Builder, mermaid: boolean) {
     let m: RegExpExecArray | null;
     m = /^\[([^\]]+)\]$/.exec(t);
     if (m) { const id = slug(m[1]!); b.node(id, clean(m[1]!), undefined, cur()); return id; }
-    m = /^\(\)\s*"?([^"]+)"?$/.exec(t);
+    m = /^\(\)\s*"?([^"\s][^"]*)"?$/.exec(t);
     if (m) { const id = slug(m[1]!); b.node(id, clean(m[1]!), 'circle', cur()); return id; }
     m = /^\(([^)]+)\)$/.exec(t);
     if (m) { const id = slug(m[1]!); b.node(id, clean(m[1]!), 'stadium', cur()); return id; }
@@ -670,9 +672,9 @@ function component(lines: [string, number][], b: Builder, mermaid: boolean) {
       continue;
     }
     if (mermaid) {
-      m = /^group\s+(\w+)(?:\(([^)]*)\))?\s*(?:\[([^\]]*)\])?\s*(?:in\s+(\w+))?$/i.exec(s);
+      m = /^group\s+(\w+)(?:\(([^)]*)\))?(?:\s*\[([^\]]*)\])?(?:\s*in\s+(\w+))?$/i.exec(s);
       if (m) { b.group(m[1]!, m[3] ?? m[1]!, m[4]); continue; }
-      m = /^(service|junction)\s+(\w+)(?:\(([^)]*)\))?\s*(?:\[([^\]]*)\])?\s*(?:in\s+(\w+))?$/i.exec(s);
+      m = /^(service|junction)\s+(\w+)(?:\(([^)]*)\))?(?:\s*\[([^\]]*)\])?(?:\s*in\s+(\w+))?$/i.exec(s);
       if (m) {
         const junction = m[1]!.toLowerCase() === 'junction';
         const icon = (m[3] ?? '').toLowerCase();
@@ -690,9 +692,11 @@ function component(lines: [string, number][], b: Builder, mermaid: boolean) {
       continue;
     }
     // PlantUML component / deployment
-    m = /^(\w+)\s+("[^"]*"|\[[^\]]+\]|[^\s{]+)(?:\s+as\s+("[^"]*"|\S+))?\s*(?:<<[^>]*>>)?\s*(\{)?\s*$/.exec(s);
-    if (m && /^(component|node|cloud|package|rectangle|folder|frame|database|storage|artifact|queue|interface|actor|usecase|agent|card|boundary|control|entity|collections|namespace)$/i.test(m[1]!)) {
-      const [, kw, a, bAs, open] = m;
+    m = /^(\w+)\s+("[^"]*"|\[[^\]]+\]|[^\s{]+)(.*)$/.exec(s);
+    const tail = m ? /^(?:\s+as\s+("[^"]*"|\S+))?(?:\s*<<[^>]*>>)?\s*(\{)?$/.exec(m[3]!) : null;
+    if (m && tail && /^(component|node|cloud|package|rectangle|folder|frame|database|storage|artifact|queue|interface|actor|usecase|agent|card|boundary|control|entity|collections|namespace)$/i.test(m[1]!)) {
+      const [, kw, a] = m;
+      const [, bAs, open] = tail;
       const raw = a!.replace(/^\[|\]$/g, ''), label = clean(raw);
       const id = bAs ? slug(bAs) : slug(raw);
       if (open && CONTAINERS.test(kw!)) { b.group(id, label, cur()); scope.push(id); }
@@ -704,11 +708,11 @@ function component(lines: [string, number][], b: Builder, mermaid: boolean) {
     if (m) { b.node(m[2]!, clean(m[1]!), undefined, cur()); continue; }
     m = /^\(\)\s*("[^"]*"|\w+)(?:\s+as\s+(\w+))?\s*$/.exec(s);
     if (m) { b.node(m[2] ?? slug(m[1]!), clean(m[1]!), 'circle', cur()); continue; }
-    m = /^(\[[^\]]+\]|\(\)\s*"[^"]*"|\(\)\s*\w+|"[^"]+"|\([^)]+\)|\w+)\s*(<)?([-.=]+)(?:\[[^\]]*\])?(?:(?:up|down|left|right|u|d|l|r)[-.]*)?(>|\|>)?\s*(\[[^\]]+\]|\(\)\s*"[^"]*"|\(\)\s*\w+|"[^"]+"|\([^)]+\)|\w+)\s*(?::\s*(.*))?$/.exec(s);
+    m = LINK.exec(s);
     if (m) {
       const a = endpoint(m[1]!, ln), z = endpoint(m[5]!, ln);
       const dotted = m[3]!.includes('.');
-      b.link(a, z, { text: m[6] ? clean(m[6]) : undefined, line: dotted ? 'dotted' : undefined, head: m[4] ? 'arrow' : 'none', tail: m[2] ? 'arrow' : undefined });
+      b.link(a, z, { text: clean(m[6] ?? '') || undefined, line: dotted ? 'dotted' : undefined, head: m[4] ? 'arrow' : 'none', tail: m[2] ? 'arrow' : undefined });
       continue;
     }
     b.bad(ln, `Unrecognised component statement "${s.slice(0, 40)}". Use "component X", "node N { ... }", "[A] --> [B] : label".`);
@@ -732,7 +736,7 @@ export function sniffKind(source: string): Kind | undefined {
   if (/^mindmap\b/i.test(first) || /^@startmindmap\b/i.test(first)) return 'mindmap';
   if (/^@start(?:uml)?\b/i.test(first) && /^@startuml/i.test(first)) {
     const body = rows.filter((r) => r && !r.startsWith("'") && !/^@(?:start|end)uml/i.test(r));
-    if (body.some((r) => /^(start|stop|end|if\s*\(|while\s*\(|repeat\b|fork\b|partition\b|:.*;?\s*$)/i.test(r) && !/^end\s+(?:note|fork)/i.test(r)) && !body.some((r) => /^(participant|actor|class|state|entity)\b|->/.test(r) && !r.startsWith('->'))) return 'activity';
+    if (body.some((r) => /^(start|stop|end|if\s*\(|while\s*\(|repeat\b|fork\b|partition\b|:.*;?\s*$)/i.test(r) && !/^end\s+(?:note|fork)/i.test(r)) && !body.some((r) => /(?:^(?:participant|actor|class|state|entity)\b|->)/.test(r) && !r.startsWith('->'))) return 'activity';
     if (body.some((r) => /^(Person|System|Container|Component|Enterprise)(Db|Queue)?(_Ext)?\(|^!include\s.*C4/i.test(r))) return 'c4';
     if (body.some((r) => /^state\b|\[\*\]/.test(r))) return 'state';
     if (body.some((r) => /^(class|interface|abstract|enum)\s+\w+/i.test(r))) return 'class';

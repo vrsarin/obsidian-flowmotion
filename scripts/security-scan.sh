@@ -4,7 +4,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-[ -f .security.env ] && { set -a; . ./.security.env; set +a; }
+[[ -f .security.env ]] && { set -a; . ./.security.env; set +a; }
 
 OUT=.security
 mkdir -p "$OUT"
@@ -16,7 +16,11 @@ SONAR_PROJECT="${SONAR_PROJECT:-vrsarin_obsidian-flowmotion}"
 # Never analyse local code into the main branch: use a dedicated branch name.
 SONAR_BRANCH="${SONAR_BRANCH:-local-scan}"
 
-skip() { echo "SKIPPED $tool: $1" | tee "$OUT/$tool.skipped"; exit 0; }
+skip() {
+  local reason="$1"
+  echo "SKIPPED $tool: $reason" | tee "$OUT/$tool.skipped"
+  exit 0
+}
 rm -f "$OUT/$tool.skipped"
 
 case "$tool" in
@@ -26,7 +30,7 @@ semgrep)
     --metrics=off --quiet --sarif --output "$OUT/semgrep.sarif" src scripts e2e .github
   ;;
 snyk)
-  [ -n "${SNYK_TOKEN:-}" ] || skip "SNYK_TOKEN not set"
+  [[ -n "${SNYK_TOKEN:-}" ]] || skip "SNYK_TOKEN not set"
   snyk=(snyk); command -v snyk >/dev/null || snyk=(npx --yes snyk@latest)
   "${snyk[@]}" test --all-projects --severity-threshold=medium \
     --sarif-file-output="$OUT/snyk-oss.sarif" >"$OUT/snyk-oss.txt" 2>&1
@@ -34,11 +38,11 @@ snyk)
   "${snyk[@]}" code test --severity-threshold=medium \
     --sarif-file-output="$OUT/snyk-code.sarif" >"$OUT/snyk-code.txt" 2>&1
   code=$?
-  echo "snyk exit codes: oss=$oss code=$code (1 = findings, >1 = tool error; see $OUT/snyk-*.txt)"
-  [ "$oss" -le 1 ] && [ "$code" -le 1 ]
+  echo "snyk exit codes: oss=$oss code=$code (1 = findings, >1 = tool error; see $OUT/snyk-*.txt)" >&2
+  [[ "$oss" -le 1 && "$code" -le 1 ]]
   ;;
 sonar)
-  [ -n "${SONAR_TOKEN:-}" ] || skip "SONAR_TOKEN not set"
+  [[ -n "${SONAR_TOKEN:-}" ]] || skip "SONAR_TOKEN not set"
   scanner=(sonar-scanner); command -v sonar-scanner >/dev/null || scanner=(npx --yes @sonar/scan)
   "${scanner[@]}" -Dsonar.host.url="$SONAR_HOST" -Dsonar.organization="$SONAR_ORG" \
     -Dsonar.projectKey="$SONAR_PROJECT" -Dsonar.sources=src -Dsonar.branch.name="$SONAR_BRANCH" \
@@ -55,7 +59,7 @@ sonar)
   exit $rc
   ;;
 aikido)
-  [ -n "${AIKIDO_API_KEY:-}" ] || skip "AIKIDO_API_KEY not set"
+  [[ -n "${AIKIDO_API_KEY:-}" ]] || skip "AIKIDO_API_KEY not set"
   cmd="${AIKIDO_CMD:-aikido-local-scanner}"
   command -v "$cmd" >/dev/null || skip "$cmd not installed (see Aikido local scanner docs; set AIKIDO_CMD to override)"
   "$cmd" scan . --apikey "$AIKIDO_API_KEY" 2>&1 | tee "$OUT/aikido.txt"

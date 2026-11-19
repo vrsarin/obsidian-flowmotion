@@ -19,7 +19,7 @@ describe('flowLanguageExtension', () => {
     const v = view(DOC);
     expect(v.dom.querySelectorAll('.fm-diag').length).toBeGreaterThan(0);
     v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: 'plain text' } });
-    expect(v.dom.querySelectorAll('.fm-diag').length).toBe(0);
+    expect(v.dom.querySelectorAll('.fm-diag')).toHaveLength(0);
     v.dispatch({ changes: { from: 0, insert: '```flowmotion\nnodes: [{id: a}]\nsrc: ok.flow\n```' } });
     v.destroy();
     const ok = view('```flowmotion\nnodes: [{id: a}]\nsrc: ok.flow\n```', app(true));

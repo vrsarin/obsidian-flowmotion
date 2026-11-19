@@ -112,7 +112,7 @@ describe('mountModel extras', () => {
     expect(m.player.playing).toBe(false);
     ioCb!([{ isIntersecting: true }]);
     expect(m.player.playing).toBe(true);
-    expect(observed.length).toBe(1);
+    expect(observed).toHaveLength(1);
     m.destroy();
   });
 

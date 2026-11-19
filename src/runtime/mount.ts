@@ -65,11 +65,11 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   const fitHeight = (): string | undefined => {
     if (!inSlides) return hv;
     const box = container.closest<HTMLElement>('.slides');
-    const slideH = box ? parseFloat(win.getComputedStyle(box).height) : NaN;
+    const slideH = box ? Number.parseFloat(win.getComputedStyle(box).height) : NaN;
     const full = Number.isFinite(slideH) && slideH > 0 ? slideH : 700;
     let want = Infinity;
-    if (hv && /^[\d.]+vh$/.test(hv)) want = (parseFloat(hv) / 100) * full;
-    else if (hv && /^[\d.]+px$/.test(hv)) want = parseFloat(hv);
+    if (hv && /^[\d.]+vh$/.test(hv)) want = (Number.parseFloat(hv) / 100) * full;
+    else if (hv && /^[\d.]+px$/.test(hv)) want = Number.parseFloat(hv);
     // Give the diagram what the slide has left after its title and text; never less than a third, never more than 85%.
     const slide = container.closest<HTMLElement>('section');
     let room = full * 0.72;

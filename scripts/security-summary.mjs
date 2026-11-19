@@ -10,7 +10,8 @@ const rank = { error: 0, warning: 1, note: 2, none: 3 };
 let blocking = 0;
 
 for (const f of files.filter((n) => n.endsWith(".skipped"))) {
-  log(`\n== ${f.replace(".skipped", "")} ==\n  ${readFileSync(`${directory}/${f}`, "utf8").trim()}`);
+  const reason = readFileSync(`${directory}/${f}`, "utf8").trim();
+  log(`\n== ${f.replace(".skipped", "")} ==\n  ${reason}`);
 }
 
 for (const f of files.filter((n) => n.endsWith(".sarif"))) {

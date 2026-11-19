@@ -188,7 +188,7 @@ describe('commands and menus', () => {
     await cmd(plugin, 'new-flow').callback();
     await plugin.newFlow('sub');
     await plugin.newFlow('/');
-    expect(created.length).toBe(3);
+    expect(created).toHaveLength(3);
     expect(open).toHaveBeenCalledTimes(3);
     await plugin.newDrawio('sub');
     expect(notices.some((n) => n.includes('turn on'))).toBe(true);
@@ -251,7 +251,7 @@ describe('commands and menus', () => {
     handlers['file-menu']![0]!(fmenu, folder);
     handlers['file-menu']![0]!(fmenu, mkFile('c.yaml'));
     handlers['file-menu']![0]!(fmenu, mkFile('c.md'));
-    expect(fm.length).toBe(3);
+    expect(fm).toHaveLength(3);
     await fm[0].click(); await fm[2].click();
     expect(app.fileManager.renameFile).toHaveBeenCalledWith(expect.anything(), 'c.flow');
   });

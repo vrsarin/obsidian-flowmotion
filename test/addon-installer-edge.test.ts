@@ -102,11 +102,6 @@ describe('installer edge cases', () => {
     const { p } = run(tgz(entry('package/other.txt', 'x')));
     await expect(p).rejects.toThrow('expected files');
   });
-  it('rejects oversized entry by pax size', async () => {
-    const size = 65 * 1024 * 1024;
-    const big = Buffer.concat([block('package/m.txt', '0', 0), Buffer.alloc(0)]);
-    void big; void size;
-  });
   it('rejects a concurrent install and survives cleanup failure', async () => {
     net.replies = [{ body: Buffer.from('v') }, { body: tgz(entry('package/other', 'x')) }];
     const st = store();
