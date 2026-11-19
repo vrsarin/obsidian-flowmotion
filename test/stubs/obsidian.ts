@@ -13,13 +13,17 @@ export class Plugin {
   constructor(app: unknown, manifest: { id: string; dir?: string }) { this.app = app; this.manifest = manifest; }
   settingTabs: PluginSettingTab[] = [];
   addSettingTab(tab: PluginSettingTab) { this.settingTabs.push(tab); }
-  addCommand(_c: unknown) {}
-  registerView(_t: string, _f: unknown) {}
+  commands: Record<string, unknown>[] = [];
+  views: Record<string, (leaf: unknown) => unknown> = {};
+  events: unknown[] = [];
+  processors: Record<string, (...a: unknown[]) => unknown> = {};
+  addCommand(c: Record<string, unknown>) { this.commands.push(c); }
+  registerView(t: string, f: (leaf: unknown) => unknown) { this.views[t] = f; }
   registerExtensions(_e: string[], _v: string) {}
-  registerEvent(_e: unknown) {}
+  registerEvent(e: unknown) { this.events.push(e); }
   addRibbonIcon(_i: string, _t: string, _c: unknown) { return document.createElement('div'); }
   registerDomEvent(..._a: unknown[]) {}
-  registerMarkdownCodeBlockProcessor(..._a: unknown[]) {}
+  registerMarkdownCodeBlockProcessor(lang: string, fn: (...a: unknown[]) => unknown) { this.processors[lang] = fn; }
   registerEditorSuggest(_s: unknown) {}
   registerEditorExtension(_e: unknown) {}
   async loadData(): Promise<unknown> { return null; }
@@ -78,7 +82,13 @@ export class FileSystemAdapter {
   getFullPath(p: string) { return `${this.base}/${p}`; }
   async exists(_p: string) { return false; }
 }
-export class TextFileView extends Component {}
+export class TextFileView extends Component {
+  contentEl = document.createElement('div'); file: TFile | null = null; actions: string[] = []; saved = 0;
+  constructor(public leaf: unknown) { super(); }
+  addAction(icon: string) { this.actions.push(icon); }
+  requestSave() { this.saved++; }
+  async save() { this.saved++; }
+}
 export class Modal {
   containerEl = document.createElement('div'); modalEl = document.createElement('div'); contentEl = document.createElement('div');
   titleElement = document.createElement('div');
@@ -89,6 +99,7 @@ export class Modal {
 export class Editor {}
 export class EditorSuggest<T> extends Component {
   declare protected suggestionType: T;
+  context: unknown = null;
   constructor(public app: unknown) { super(); }
 }
 export class Menu {}

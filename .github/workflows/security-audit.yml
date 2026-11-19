@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run build
       - run: npm run lint
       - run: npm run typecheck
@@ -68,7 +68,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Scan dependencies and source
         id: snyk-oss
         continue-on-error: true
@@ -125,7 +125,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run build
       - run: npm run test:coverage
       - name: Analyze with SonarCloud

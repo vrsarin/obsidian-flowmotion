@@ -79,6 +79,13 @@ export default defineConfig([
     rules: {
       // Vitest's spy assertions intentionally detach mocked methods.
       "@typescript-eslint/unbound-method": "off",
+      // Test doubles and private-member access are deliberately loosely typed.
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-unsafe-assignment": "off",
+      "@typescript-eslint/no-unsafe-argument": "off",
+      "@typescript-eslint/no-unsafe-return": "off",
+      "@typescript-eslint/no-unsafe-member-access": "off",
+      "@typescript-eslint/no-unsafe-call": "off",
       "no-restricted-properties": [
         "error",
         { object: "describe", property: "only", message: "Do not commit describe.only()." },

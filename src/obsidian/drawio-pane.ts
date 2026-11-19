@@ -16,6 +16,7 @@ export interface DrawioOptions { app: App; pluginDir: string; server: { url(): P
 export class DrawioPane {
   readonly root: HTMLElement;
   private frame?: HTMLIFrameElement;
+  private targetOrigin?: string;
   private pending = '';
   private ready = false;
   private xml = BLANK_MXFILE;
@@ -48,10 +49,13 @@ export class DrawioPane {
     try { base = await this.o.server.url(); } catch (e) { this.root.createEl('p', { cls: 'fm-error', text: `Could not start the local draw.io server: ${(e as Error).message}` }); return; }
     if (this.dead) return;
     const url = `${base}/index.html?embed=1&proto=json&spin=1&offline=1&lang=en&ui=atlas&saveAndExit=0&noExitBtn=1&libraries=1`;
+    this.targetOrigin = new URL(base).origin;
     this.frame = this.root.createEl('iframe', { cls: 'fm-drawio-frame', attr: { src: url, title: 'draw.io editor' } });
   }
 
-  private post(msg: object) { this.frame?.contentWindow?.postMessage(JSON.stringify(msg), '*'); }
+  private post(msg: object) {
+    if (this.targetOrigin) this.frame?.contentWindow?.postMessage(JSON.stringify(msg), this.targetOrigin);
+  }
   private load() { this.pending = this.xml; this.post({ action: 'load', xml: this.xml, autosave: 1 }); }
 
   private export(xml: string): Promise<void> {

@@ -103,33 +103,28 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   applyMode(mode);
 
   const reduced = typeof win.matchMedia === 'function' && win.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const controls: {
-    playBtn?: HTMLButtonElement;
-    scrub?: HTMLInputElement;
-    time?: HTMLElement;
-  } = {};
-  const sync = () => {
-    if (controls.playBtn) { controls.playBtn.textContent = player.playing ? '⏸' : '▶'; controls.playBtn.setAttribute('aria-label', player.playing ? 'Pause' : 'Play'); }
-    if (controls.scrub) controls.scrub.value = String(Math.round(player.t));
-    if (controls.time) controls.time.textContent = `${(player.t / 1000).toFixed(1)}s`;
-  };
-  const player = new Player(svg, model, { speed: opts.speed, loop: opts.loop, onUpdate: sync });
-
+  let player: Player;
   const bar = create('div');
   bar.className = 'fm-controls';
   const pb = create('div'); // playback controls, toggled by the button below
   pb.className = 'fm-pb';
-  controls.playBtn = button(create, 'Play', '▶', () => player.toggle());
+  const playBtn = button(create, 'Play', '▶', () => player.toggle());
   const scrub = create('input');
-  controls.scrub = scrub;
-  scrub.type = 'range'; scrub.className = 'fm-scrub'; scrub.min = '0'; scrub.max = String(Math.round(player.total)); scrub.value = '0';
+  scrub.type = 'range'; scrub.className = 'fm-scrub'; scrub.min = '0'; scrub.value = '0';
   scrub.setAttribute('aria-label', 'Timeline');
   scrub.addEventListener('input', () => { player.pause(); player.seek(Number(scrub.value)); });
   const time = create('span');
-  controls.time = time;
   time.className = 'fm-time';
   const speed = create('select');
   speed.className = 'fm-speed'; speed.setAttribute('aria-label', 'Speed');
+  const sync = () => {
+    playBtn.textContent = player.playing ? '⏸' : '▶';
+    playBtn.setAttribute('aria-label', player.playing ? 'Pause' : 'Play');
+    scrub.value = String(Math.round(player.t));
+    time.textContent = `${(player.t / 1000).toFixed(1)}s`;
+  };
+  player = new Player(svg, model, { speed: opts.speed, loop: opts.loop, onUpdate: sync });
+  scrub.max = String(Math.round(player.total));
   for (const s of [0.25, 0.5, 1, 2, 4]) {
     const o = create('option'); o.value = String(s); o.textContent = `${s}×`;
     if (s === player.speed) o.selected = true;
@@ -137,12 +132,12 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   }
   speed.addEventListener('change', () => player.setSpeed(Number(speed.value)));
   pb.append(
-    controls.playBtn,
+    playBtn,
     button(create, 'Step back', '⏮', () => player.stepBack()),
     button(create, 'Step forward', '⏭', () => player.stepForward()),
     button(create, 'Reset', '⏹', () => player.reset()),
     button(create, 'Replay', '↻', () => player.replay()),
-    controls.scrub, controls.time, speed,
+    scrub, time, speed,
   );
   const toggle = button(create, 'Show playback controls', '⚙', () => setControls(pb.hidden));
   const setControls = (on: boolean) => {

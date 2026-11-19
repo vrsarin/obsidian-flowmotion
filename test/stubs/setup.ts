@@ -18,6 +18,8 @@ proto.createEl = function (this: HTMLElement, tag: string, o?: Opts | string) { 
 proto.createDiv = function (this: HTMLElement, o?: Opts | string) { return (this as HTMLElement & { createEl: (t: string, o?: unknown) => HTMLElement }).createEl('div', o); };
 proto.createSpan = function (this: HTMLElement, o?: Opts | string) { return (this as HTMLElement & { createEl: (t: string, o?: unknown) => HTMLElement }).createEl('span', o); };
 proto.empty = function (this: HTMLElement) { this.replaceChildren(); };
+proto.show = function (this: HTMLElement) { this.style.display = ''; };
+proto.hide = function (this: HTMLElement) { this.style.display = 'none'; };
 proto.setText = function (this: HTMLElement, t: string) { this.textContent = t; };
 proto.addClass = function (this: HTMLElement, ...c: string[]) { this.classList.add(...c); };
 proto.removeClass = function (this: HTMLElement, ...c: string[]) { this.classList.remove(...c); };

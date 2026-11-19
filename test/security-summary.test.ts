@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { summarizeSecurityReports } from '../scripts/security-summary.mjs';
+import { runSecuritySummaryCli, summarizeSecurityReports } from '../scripts/security-summary.mjs';
 
 const directories: string[] = [];
 const makeDir = () => {
@@ -45,5 +45,45 @@ describe('security report summary', () => {
     expect(output.join('\n')).toContain('== sonar == 4 open issue(s)');
     expect(output.join('\n')).toContain('aikido');
     expect(output.at(-1)).toContain('3 finding(s) at warning level or above');
+  });
+
+  it('covers missing fields and empty report variants', () => {
+    const directory = makeDir();
+    const output: string[] = [];
+    writeFileSync(join(directory, 'empty.sarif'), JSON.stringify({}));
+    writeFileSync(join(directory, 'no-results.sarif'), JSON.stringify({ runs: [{}] }));
+    writeFileSync(join(directory, 'fallbacks.sarif'), JSON.stringify({ runs: [{ results: [
+      { ruleId: 'MISSING', locations: [{ physicalLocation: { artifactLocation: { uri: 'src/missing.ts' }, region: {} } }] },
+      { ruleId: 'UNKNOWN', level: 'critical', message: { text: 'unknown severity' }, locations: [{ physicalLocation: { region: { startLine: 4 } } }] },
+      { ruleId: 'UNKNOWN_2', level: 'critical', message: { text: 'another unknown severity' } },
+      { ruleId: 'NOTE', level: 'note', message: { text: 'informational' } },
+    ] }] }));
+    writeFileSync(join(directory, 'note-only.sarif'), JSON.stringify({ runs: [{ results: [
+      { ruleId: 'ONLY_NOTE', level: 'note', message: { text: 'no blocking finding' } },
+    ] }] }));
+    writeFileSync(join(directory, 'sonar-issues.json'), JSON.stringify({ total: 1, issues: [
+      { severity: 'MAJOR', rule: 'rule-2', component: 'project:src/c.ts', message: 'missing line number' },
+    ] }));
+
+    expect(summarizeSecurityReports({ directory, log: (line) => output.push(line) })).toBe(2);
+    expect(output.join('\n')).toContain('MISSING src/missing.ts:?');
+    expect(output.join('\n')).toContain('UNKNOWN undefined:4');
+    expect(output.join('\n')).toContain('[warning] MISSING');
+    expect(output.join('\n')).toContain('rule-2 src/c.ts:?');
+    expect(output.join('\n')).toContain('== sonar == 1 open issue(s)');
+
+    const emptyDirectory = makeDir();
+    const emptyOutput: string[] = [];
+    expect(summarizeSecurityReports({ directory: emptyDirectory, log: (line) => emptyOutput.push(line) })).toBe(0);
+    expect(emptyOutput.at(-1)).toContain('0 finding(s) at warning level or above');
+  });
+
+  it('runs the CLI summary only for the entry point', () => {
+    const output: string[] = [];
+    const options = { directory: join(tmpdir(), 'missing-cli-security-dir'), log: (line: string) => output.push(line) };
+    runSecuritySummaryCli(false, options);
+    expect(output).toEqual([]);
+    runSecuritySummaryCli(true, options);
+    expect(output[0]).toMatch(/No .security/);
   });
 });

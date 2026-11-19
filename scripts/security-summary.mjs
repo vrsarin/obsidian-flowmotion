@@ -45,4 +45,8 @@ log(`\n${blocking} finding(s) at warning level or above. Full reports: ${directo
 return blocking;
 }
 
-if (process.argv[1] && process.argv[1].endsWith("security-summary.mjs")) summarizeSecurityReports();
+export function runSecuritySummaryCli(isMain, options) {
+  if (isMain) summarizeSecurityReports(options);
+}
+
+runSecuritySummaryCli(process.argv[1]?.endsWith("security-summary.mjs") === true);
