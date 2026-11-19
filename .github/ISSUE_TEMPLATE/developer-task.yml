@@ -1,0 +1,47 @@
+name: Developer task
+description: Create a scoped implementation task under an existing feature.
+type: "Task"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Write a short title that names the work. Do not add a type or category prefix such as "Task:".
+        Use this form for work a developer can complete and verify. Keep account access or other enabling resources as prerequisites on the parent feature, not as standalone tasks.
+  - type: input
+    id: parent
+    attributes:
+      label: Parent feature issue
+      description: Enter the feature issue number, for example #34.
+      placeholder: "#34"
+    validations:
+      required: true
+  - type: textarea
+    id: requirement
+    attributes:
+      label: Requirement
+      description: Describe the change, relevant files or behaviour, and any important constraints.
+      placeholder: What should the developer implement?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List observable outcomes that demonstrate completion. Use one criterion per line.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Prerequisites and dependencies
+      description: Describe required access, decisions, or other prerequisites without including passwords, tokens, or other secrets. Do not create a separate issue just to obtain access.
+      placeholder: "None, or describe the prerequisite."
+    validations:
+      required: false
+  - type: markdown
+    attributes:
+      value: |
+        After creating the task, add it to the parent's Developer tasks list to establish the parent-child relationship. Leave milestone and sprint assignments for release and sprint planning.
