@@ -43,6 +43,7 @@ snyk)
   ;;
 sonar)
   [[ -n "${SONAR_TOKEN:-}" ]] || skip "SONAR_TOKEN not set"
+  rm -f "$OUT/sonar-issues.json"
   scanner=(sonar-scanner); command -v sonar-scanner >/dev/null || scanner=(npx --yes @sonar/scan)
   "${scanner[@]}" -Dsonar.host.url="$SONAR_HOST" -Dsonar.organization="$SONAR_ORG" \
     -Dsonar.projectKey="$SONAR_PROJECT" -Dsonar.sources=src -Dsonar.branch.name="$SONAR_BRANCH" \
@@ -55,7 +56,11 @@ sonar)
   grep -q "EXECUTION FAILURE\|Scanner engine failed" "$OUT/sonar-scan.txt" && exit 1
   curl -fsS -H "Authorization: Bearer $SONAR_TOKEN" \
     "$SONAR_HOST/api/issues/search?organization=$SONAR_ORG&componentKeys=$SONAR_PROJECT&branch=$SONAR_BRANCH&resolved=false&ps=500" \
-    -o "$OUT/sonar-issues.json" || echo "could not fetch Sonar issues"
+    -o "$OUT/sonar-issues.json" || {
+      rm -f "$OUT/sonar-issues.json"
+      echo "could not fetch Sonar issues" >&2
+      exit 1
+    }
   exit $rc
   ;;
 aikido)

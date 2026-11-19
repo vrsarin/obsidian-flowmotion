@@ -38,13 +38,14 @@ describe('security report summary', () => {
 
     const count = summarizeSecurityReports({ directory, top: 1, log: (line) => output.push(line) });
 
-    expect(count).toBe(3);
+    expect(count).toBe(6);
     expect(output.join('\n')).toContain('snyk');
     expect(output.join('\n')).toContain('[error] ERR src/a.ts:7');
     expect(output.join('\n')).toContain('3 finding(s) {"error":1,"warning":1,"note":1}');
     expect(output.join('\n')).toContain('== sonar == 4 open issue(s)');
+    expect(output.join('\n')).toContain('severity counts cover first 1');
     expect(output.join('\n')).toContain('aikido');
-    expect(output.at(-1)).toContain('3 finding(s) at warning level or above');
+    expect(output.at(-1)).toContain('6 finding(s) at warning level or above');
   });
 
   it('covers missing fields and empty report variants', () => {

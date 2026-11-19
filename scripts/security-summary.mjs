@@ -35,8 +35,9 @@ if (files.includes("sonar-issues.json")) {
   const { issues = [], total = 0 } = JSON.parse(readFileSync(`${directory}/sonar-issues.json`, "utf8"));
   const counts = {};
   for (const i of issues) counts[i.severity] = (counts[i.severity] ?? 0) + 1;
-  blocking += issues.length;
-  log(`\n== sonar == ${total} open issue(s) ${JSON.stringify(counts)}`);
+  blocking += total;
+  const page = total > issues.length ? ` (severity counts cover first ${issues.length})` : "";
+  log(`\n== sonar == ${total} open issue(s) ${JSON.stringify(counts)}${page}`);
   issues.slice(0, top).forEach((i) =>
     log(`  [${i.severity}] ${i.rule} ${i.component.split(":").pop()}:${i.line ?? "?"}\n      ${i.message.slice(0, 140)}`));
 }
