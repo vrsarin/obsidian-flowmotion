@@ -67,7 +67,9 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
     const box = container.closest<HTMLElement>('.slides');
     const slideH = box ? parseFloat(win.getComputedStyle(box).height) : NaN;
     const full = Number.isFinite(slideH) && slideH > 0 ? slideH : 700;
-    const want = hv && /^[\d.]+vh$/.test(hv) ? (parseFloat(hv) / 100) * full : hv && /^[\d.]+px$/.test(hv) ? parseFloat(hv) : Infinity;
+    let want = Infinity;
+    if (hv && /^[\d.]+vh$/.test(hv)) want = (parseFloat(hv) / 100) * full;
+    else if (hv && /^[\d.]+px$/.test(hv)) want = parseFloat(hv);
     // Give the diagram what the slide has left after its title and text; never less than a third, never more than 85%.
     const slide = container.closest<HTMLElement>('section');
     let room = full * 0.72;
@@ -96,8 +98,13 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   });
   let before: Mode = mode === 'full' ? 'fit' : mode;
   const onFs = () => {
-    if (doc.fullscreenElement === wrap) { if (mode !== 'full') before = mode; mode = 'full'; modeSel.value = 'full'; }
-    else if (mode === 'full') applyMode(before);
+    if (doc.fullscreenElement === wrap) {
+      if (mode !== 'full') before = mode;
+      mode = 'full';
+      modeSel.value = 'full';
+    } else if (mode === 'full') {
+      applyMode(before);
+    }
   };
   doc.addEventListener('fullscreenchange', onFs);
   applyMode(mode);
@@ -162,7 +169,8 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
     parts.push(sel);
   }
   bar.append(...parts);
-  if ((model.view?.controlsPosition ?? 'top') === 'top') wrap.insertBefore(bar, svg); else wrap.appendChild(bar);
+  if ((model.view?.controlsPosition ?? 'top') === 'top') svg.before(bar);
+  else wrap.appendChild(bar);
   bar.classList.add(model.view?.controlsPosition === 'bottom' ? 'fm-bar-bottom' : 'fm-bar-top');
   sync();
 
