@@ -1,5 +1,17 @@
 version: v1.25.0
-ignore: {}
+ignore:
+  'SNYK-JS-URIJS-19963961':
+    - '*':
+        reason: "No fixed uri-js release is available. This is currently a development-only path via ESLint and Ajv, and the package is not shipped with the plugin. Tracked by #35 and PR #69; owner: @vrsarin; review by 2026-12-19."
+        expires: '2026-12-19T00:00:00.000Z'
+  'SNYK-JS-URIJS-19963963':
+    - '*':
+        reason: "No fixed uri-js release is available. This is currently a development-only path via ESLint and Ajv, and the package is not shipped with the plugin. Tracked by #35 and PR #69; owner: @vrsarin; review by 2026-12-19."
+        expires: '2026-12-19T00:00:00.000Z'
+  'SNYK-JS-URIJS-20341609':
+    - '*':
+        reason: "No fixed uri-js release is available. This is currently a development-only path via ESLint and Ajv, and the package is not shipped with the plugin. Tracked by #35 and PR #69; owner: @vrsarin; review by 2026-12-19."
+        expires: '2026-12-19T00:00:00.000Z'
 # Dev-only CLI helpers (user-supplied paths by design) and tests are not shipped in the plugin.
 exclude:
   code:
