@@ -103,11 +103,15 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   applyMode(mode);
 
   const reduced = typeof win.matchMedia === 'function' && win.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let playBtn: HTMLButtonElement | undefined, scrub: HTMLInputElement | undefined, time: HTMLElement | undefined;
+  const controls: {
+    playBtn?: HTMLButtonElement;
+    scrub?: HTMLInputElement;
+    time?: HTMLElement;
+  } = {};
   const sync = () => {
-    if (playBtn) { playBtn.textContent = player.playing ? '⏸' : '▶'; playBtn.setAttribute('aria-label', player.playing ? 'Pause' : 'Play'); }
-    if (scrub) scrub.value = String(Math.round(player.t));
-    if (time) time.textContent = `${(player.t / 1000).toFixed(1)}s`;
+    if (controls.playBtn) { controls.playBtn.textContent = player.playing ? '⏸' : '▶'; controls.playBtn.setAttribute('aria-label', player.playing ? 'Pause' : 'Play'); }
+    if (controls.scrub) controls.scrub.value = String(Math.round(player.t));
+    if (controls.time) controls.time.textContent = `${(player.t / 1000).toFixed(1)}s`;
   };
   const player = new Player(svg, model, { speed: opts.speed, loop: opts.loop, onUpdate: sync });
 
@@ -115,12 +119,15 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   bar.className = 'fm-controls';
   const pb = create('div'); // playback controls, toggled by the button below
   pb.className = 'fm-pb';
-  playBtn = button(create, 'Play', '▶', () => player.toggle());
-  scrub = create('input');
+  controls.playBtn = button(create, 'Play', '▶', () => player.toggle());
+  const scrub = create('input');
+  controls.scrub = scrub;
   scrub.type = 'range'; scrub.className = 'fm-scrub'; scrub.min = '0'; scrub.max = String(Math.round(player.total)); scrub.value = '0';
   scrub.setAttribute('aria-label', 'Timeline');
   scrub.addEventListener('input', () => { player.pause(); player.seek(Number(scrub.value)); });
-  time = create('span'); time.className = 'fm-time';
+  const time = create('span');
+  controls.time = time;
+  time.className = 'fm-time';
   const speed = create('select');
   speed.className = 'fm-speed'; speed.setAttribute('aria-label', 'Speed');
   for (const s of [0.25, 0.5, 1, 2, 4]) {
@@ -130,12 +137,12 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   }
   speed.addEventListener('change', () => player.setSpeed(Number(speed.value)));
   pb.append(
-    playBtn,
+    controls.playBtn,
     button(create, 'Step back', '⏮', () => player.stepBack()),
     button(create, 'Step forward', '⏭', () => player.stepForward()),
     button(create, 'Reset', '⏹', () => player.reset()),
     button(create, 'Replay', '↻', () => player.replay()),
-    scrub, time, speed,
+    controls.scrub, controls.time, speed,
   );
   const toggle = button(create, 'Show playback controls', '⚙', () => setControls(pb.hidden));
   const setControls = (on: boolean) => {

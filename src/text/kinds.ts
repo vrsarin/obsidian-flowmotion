@@ -82,7 +82,7 @@ function activity(lines: [string, number][], b: Builder) {
 
   let i = 0;
   while (i < lines.length) {
-    let [s, ln] = lines[i]!; i++;
+    const [s, ln] = lines[i]!; i++;
     if (!s || s.startsWith("'") || /^(skinparam|title|header|footer|legend|hide|show|left to right|top to bottom)\b/i.test(s)) continue;
     const t = s.replace(/;\s*$/, '');
     let m: RegExpExecArray | null;
@@ -437,7 +437,7 @@ function gantt(lines: [string, number][], b: Builder, plant: boolean): GanttDef 
     if ((m = /^--\s*(.*?)\s*--$/.exec(s))) { section = sectionId(m[1]!); continue; }
     if ((m = /^(then\s+)?\[([^\]]+)\]\s+(.*)$/i.exec(s))) {
       const t = task(m[2]!, m[2]!);
-      let rest = m[3]!;
+      const rest = m[3]!;
       if (m[1]) { const prev = specs[specs.indexOf(t) - 1]; if (prev) t.after = [prev.id]; }
       if (/^(?:is|are)\s/i.test(rest)) continue; // colour, completion, deleted: cosmetic
       if (/^as\s/i.test(rest)) continue;

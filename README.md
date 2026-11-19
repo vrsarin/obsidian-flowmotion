@@ -1,3 +1,6 @@
+[![Security checks](https://github.com/vrsarin/obsidian-flowmotion/actions/workflows/security-audit.yml/badge.svg)](https://github.com/vrsarin/obsidian-flowmotion/actions/workflows/security-audit.yml)
+[![SonarCloud Quality Gate](https://sonarcloud.io/api/project_badges/quality_gate?project=vrsarin_obsidian-flowmotion)](https://sonarcloud.io/summary/new_code?id=vrsarin_obsidian-flowmotion)
+
 # FlowMotion
 
 **Turn any system into a diagram that moves.**
@@ -107,6 +110,20 @@ See the wiki for [reusing diagram files](https://github.com/vrsarin/obsidian-flo
 ## Status
 
 See [CHANGELOG.md](CHANGELOG.md) for version history. Automated tests cover the drawing engine and selected Obsidian desktop workflows, including loading, SVG rendering, settings, and restart persistence. Mobile use and full optional-editor workflows still need manual checks. Test it in a copy of your vault first. See [Known limitations](https://github.com/vrsarin/obsidian-flowmotion/wiki/Known-Limitations).
+
+## Security
+
+Pull requests and pushes to `main` run the repository's automated checks. The active `main` ruleset requires the **Security gate** status check before merging. The [Security checks workflow](https://github.com/vrsarin/obsidian-flowmotion/actions/workflows/security-audit.yml) runs ESLint with the Obsidian plugin and security rules, build, typecheck, tests, Semgrep, Snyk Open Source and Code, and SonarCloud. Snyk SARIF findings are uploaded to [GitHub Code scanning](https://github.com/vrsarin/obsidian-flowmotion/security/code-scanning); the workflow run page and Code scanning results provide public evidence of execution and findings. Public-fork pull requests run Semgrep Community Edition; Semgrep AppSec Platform, Snyk, and SonarCloud scans require repository secrets and are skipped for those PRs.
+
+The [SonarCloud quality gate](https://sonarcloud.io/summary/new_code?id=vrsarin_obsidian-flowmotion) shows the current server-side analysis result. Configure the repository's `SONAR_TOKEN`, `SEMGREP_APP_TOKEN`, and `SNYK_TOKEN` under **Settings → Secrets and variables → Actions** for the credentialed jobs to run. In Semgrep AppSec Platform, configure which findings are blocking; `semgrep ci --no-suppress-errors` fails the job on blocking findings and scanner errors. A scan result is evidence about that revision and scanner configuration; it does not prove the project is vulnerability-free.
+
+### Aikido and the IDE
+
+The VS Code workspace recommends ESLint, Aikido Security, Semgrep, SonarQube for IDE, and Snyk Security. Install the recommendations when VS Code prompts, then sign in to each provider from its extension. SonarQube for IDE is bound to the SonarCloud project; complete the one-time connection in VS Code using the `vrsarin` connection and project `vrsarin_obsidian-flowmotion`.
+
+Aikido's cloud PR checks are configured from the Aikido dashboard using its GitHub PR Checks app. To make Aikido findings block merges too, enable PR scans for this repository in Aikido and add the resulting Aikido check as a required status check in the `main` ruleset. Aikido's local-scanner GitHub Action is for local/on-prem scanning, so this workflow does not claim to run it. The Aikido dashboard may require sign-in; the public GitHub workflow and Code scanning pages provide public evidence for the checks that run in Actions.
+
+To reproduce the repository lint locally, run `npm ci` and `npm run lint`. A clean lint run is evidence that the configured ESLint rules passed for that checkout; it does not replace the provider scan links above.
 
 ## Contributing
 

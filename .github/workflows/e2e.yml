@@ -2,9 +2,9 @@ name: E2E (Obsidian)
 
 on:
     push:
-        branches: ["**"]
+        branches-ignore: [main]
     pull_request:
-        branches: ["**"]
+        branches-ignore: [main]
 
 permissions:
     contents: read

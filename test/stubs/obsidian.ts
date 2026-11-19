@@ -87,7 +87,10 @@ export class Modal {
   open() { document.body.append(this.contentEl); this.onOpen(); } close() { this.contentEl.remove(); } onOpen() {} onClose() {}
 }
 export class Editor {}
-export class EditorSuggest<T> extends Component { constructor(public app: unknown) { super(); } }
+export class EditorSuggest<T> extends Component {
+  declare protected suggestionType: T;
+  constructor(public app: unknown) { super(); }
+}
 export class Menu {}
 export function normalizePath(p: string) { return p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\/|\/$/g, ''); }
 export function setIcon(_el: HTMLElement, _icon: string) {}
