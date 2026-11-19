@@ -156,7 +156,7 @@ class ActivityParser {
   }
 
   private ifStart(t: string): boolean {
-    const m = /^if\s*\((.*?)\)\s*(?:then\s*(?:\((.*)\))?)?\s*$/i.exec(t);
+    const m = /^if\s*\((.*?)\)(?:\s*then(?:\s*\((.*)\))?)?$/i.exec(t);
     if (!m) return false;
     const id = this.add(clean(m[1]!), 'diamond', 'd');
     this.stack.push({ kind: 'if', cond: id, branches: [], entry: [{ from: id, text: labelOr(m[2], 'yes') }] });
@@ -260,7 +260,7 @@ class ActivityParser {
   }
 
   private endFork(t: string, ln: number): boolean {
-    if (!/^(end fork|end split|endfork|endsplit)\s*(\{.*\})?\s*$/i.test(t)) return false;
+    if (!/^(end fork|end split|endfork|endsplit)\s*(\{.*\})?$/i.test(t)) return false;
     const top = this.stack.pop();
     if (top?.kind !== 'fork') { this.b.bad(ln, '"end fork" without "fork".'); return true; }
     const ends = [...top.branches.flat(), ...this.front];
@@ -474,13 +474,13 @@ class ClassParser {
   }
 
   private relation(s: string): boolean {
-    const m = /^(\w+)\s*(?:"([^"]*)")?\s*(<\||\*|o|<|\|>|>)?(--|\.\.)(\|>|\*|o|>|<)?\s*(?:"([^"]*)")?\s*(\w+)\s*(?::\s*(.*))?$/.exec(s);
+    const m = /^(\w+)\s*(?:"([^"]*)"\s*)?(<\||\*|o|<|\|>|>)?(--|\.\.)(\|>|\*|o|>|<)?\s*(?:"([^"]*)"\s*)?(\w+)\s*(?::\s*(.*))?$/.exec(s);
     if (!m) return false;
     const [, a, ca, l, body, r, cb, z, label] = m;
     this.cls(a!); this.cls(z!);
     // Arrow points at the end that carries the decoration. Left decoration => reverse so the head lands on `a`.
     const left = deco(l), right = deco(r);
-    const text = label ? clean(label.replace(/^[<>]\s*|\s*[<>]$/g, '')) : undefined;
+    const text = label ? clean(label.replace(/^[<>]\s*/, '').replace(/[<>]$/, '').trimEnd()) : undefined;
     const line = body === '..' ? 'dotted' : undefined;
     if (left && !right) this.b.link(z!, a!, { text, line, head: left, headLabel: ca, tailLabel: cb });
     else this.b.link(a!, z!, { text, line, head: right ?? 'none', tail: left, headLabel: cb, tailLabel: ca });
@@ -600,7 +600,7 @@ function mindmap(lines: [string, number][], b: Builder, plant: boolean) {
     if (!parsed || parsed.text.startsWith('::')) continue; // ::icon lines
     const { depth } = parsed;
     const unwrapped = unwrapShape(parsed.text, depth);
-    const text = clean(unwrapped.text.replace(/^\s*:\s*/, '').replace(/\s*;\s*$/, ''));
+    const text = clean(unwrapped.text.replace(/^\s*:\s*/, '').replace(/;\s*$/, '').trimEnd());
     if (!text) continue;
     while (stack.length && stack.at(-1)!.depth >= depth) stack.pop();
     if (!stack.length && depth > 0 && b.nodes.size) { b.bad(ln, 'Mind map has more than one root. Use one top-level item.'); continue; }
@@ -724,7 +724,7 @@ class GanttParser {
   }
 
   private applyStart(t: TaskSpec, start: string, ln: number): boolean {
-    const after = /^after\s+(.+)$/i.exec(start);
+    const after = /^after\s+(\S.*)$/i.exec(start);
     if (after) { t.after = after[1]!.split(/\s+/).map(slug); return true; }
     const d = toDay(start);
     if (d === undefined) { this.b.bad(ln, `Start "${start}" is not a date (YYYY-MM-DD) or "after <id>".`); return false; }
@@ -1006,7 +1006,7 @@ class ComponentParser {
   private declaration(s: string): boolean {
     const m = /^(\w+)\s+("[^"]*"|\[[^\]]+\]|[^\s{]+)((?:[\s{].*)?)$/.exec(s);
     if (!m || !PLANT_KEYWORDS.test(m[1]!)) return false;
-    const tail = /^(?:as\s+("[^"]*"|[^\s{]+))?\s*(\{)?$/.exec(m[3]!.replace(/<<[^>]*>>/, '').trim());
+    const tail = /^(?:as\s+("[^"]*"|[^\s{"][^\s{]*))?\s*(\{)?$/.exec(m[3]!.replace(/<<[^>]*>>/, '').trim());
     if (!tail) return false;
     const [, kw, a] = m;
     const [, bAs, open] = tail;
@@ -1070,7 +1070,7 @@ function sniffUml(rows: string[]): Kind | undefined {
   const looksSequence = body.some((r) => /(?:^(?:participant|actor|class|state|entity)\b|->)/.test(r) && !r.startsWith('->'));
   if (looksActivity && !looksSequence) return 'activity';
   if (has(/^(Person|System|Container|Component|Enterprise)(Db|Queue)?(_Ext)?\(|^!include\s.*C4/i)) return 'c4';
-  if (has(/^state\b|\[\*\]/)) return 'state';
+  if (has(/(?:^state\b)|(?:\[\*\])/)) return 'state';
   if (has(/^(class|interface|abstract|enum)\s+\w+/i)) return 'class';
   if (has(/^(component|node|cloud|package|rectangle|folder|frame|database|storage|artifact|queue|usecase)\s+\S+|^\[[^\]]+\]\s*(?:<?[-.]+|as\b)/i) && !has(/^participant\b/i)) return 'component';
   if (has(/^entity\b/i) && has(/[|}o][|o{}]--[|o{}][|o{}]/)) return 'er';

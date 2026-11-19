@@ -35,7 +35,7 @@ function button(create: ElementFactory, label: string, text: string, onClick: ()
  *  fit the diagram to a share of the slide box instead, leaving room for a title or text around it. */
 function slideFitHeight(container: HTMLElement, win: Window & typeof globalThis, svg: SVGSVGElement, hv: string | undefined): string {
   const box = container.closest<HTMLElement>('.slides');
-  const slideH = box ? Number.parseFloat(win.getComputedStyle(box).height) : NaN;
+  const slideH = box ? Number.parseFloat(win.getComputedStyle(box).height) : Number.NaN;
   const full = Number.isFinite(slideH) && slideH > 0 ? slideH : 700;
   let want = Infinity;
   if (hv && /^[\d.]+vh$/.test(hv)) want = (Number.parseFloat(hv) / 100) * full;
