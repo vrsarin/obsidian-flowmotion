@@ -3,7 +3,7 @@ import { parse as parseYaml } from 'yaml';
 import { deriveEvents } from './auto';
 import { parseView } from './view';
 import { buildTimeline } from './timeline';
-import { COLOR, DiagramError, ENDS, LIMITS, LINES, SHAPES, type Diagram, type End, type EventDef, type EventType, type FlowDef, type GroupDef, type Line, type NodeDef, type Shape, type Style } from './types';
+import { isColor, DiagramError, ENDS, LIMITS, LINES, SHAPES, type Diagram, type End, type EventDef, type EventType, type FlowDef, type GroupDef, type Line, type NodeDef, type Shape, type Style } from './types';
 
 const ID = /^[A-Za-z0-9_.-]{1,64}$/;
 const EVENT_TYPES: EventType[] = ['transfer', 'process', 'complete', 'branch', 'fork', 'join', 'wait', 'emit'];
@@ -77,7 +77,7 @@ function parseStyleProperty(style: Style, key: string, value: unknown, where: st
     return;
   }
   if (key === 'fill' || key === 'stroke' || key === 'color') {
-    if (typeof value === 'string' && COLOR.test(value.trim())) style[key] = value.trim();
+    if (typeof value === 'string' && isColor(value.trim())) style[key] = value.trim();
     else bad(`${where}.${key}: a colour such as #2f6fed or red`);
     return;
   }

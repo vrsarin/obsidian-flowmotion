@@ -65,7 +65,9 @@ function tarField(block: Buffer, start: number, length: number): string {
 }
 
 function tarOctal(block: Buffer, start: number, length: number, label: string): number {
-  const value = tarField(block, start, length).trim().replace(/\0.*$/, '');
+  const field = tarField(block, start, length).trim();
+  const nul = field.indexOf('\0');
+  const value = nul < 0 ? field : field.slice(0, nul);
   if (!value) return 0;
   if (!/^[0-7]+$/.test(value)) throw new Error(`invalid ${label} in add-on archive`);
   const parsed = Number.parseInt(value, 8);
@@ -124,7 +126,10 @@ function applyTarExtension(
   paddedEnd: number,
 ): boolean {
   if (type === 'L') {
-    state.longName = decoder.decode(data).replace(/[\0\n]+$/, '');
+    const name = decoder.decode(data);
+    let end = name.length;
+    while (end > 0 && (name[end - 1] === '\0' || name[end - 1] === '\n')) end--;
+    state.longName = name.slice(0, end);
     state.offset = paddedEnd;
     return true;
   }

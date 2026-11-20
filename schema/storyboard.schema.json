@@ -338,7 +338,8 @@
                       "description": "Allow beat highlighting."
                     }
                   }
-                }
+                },
+                "x-key-ref": "element"
               },
               "groups": {
                 "type": "object",
@@ -365,7 +366,8 @@
                       "description": "Outline color."
                     }
                   }
-                }
+                },
+                "x-key-ref": "element"
               },
               "arrows": {
                 "type": "object",
@@ -405,7 +407,8 @@
                       "description": "Allow active connector highlighting."
                     }
                   }
-                }
+                },
+                "x-key-ref": "element"
               }
             }
           },
@@ -432,7 +435,10 @@
                   "description": "Arrows to animate (ids, or {edge, data, back}).",
                   "anyOf": [
                     {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Arrow id.",
+                      "pattern": "^[A-Za-z0-9_.>-]{1,64}$",
+                      "x-ref": "element"
                     },
                     {
                       "type": "object",
@@ -463,7 +469,10 @@
                       "items": {
                         "anyOf": [
                           {
-                            "type": "string"
+                            "type": "string",
+                            "description": "Arrow id.",
+                            "pattern": "^[A-Za-z0-9_.>-]{1,64}$",
+                            "x-ref": "element"
                           },
                           {
                             "type": "object",
@@ -497,6 +506,7 @@
                 "show": {
                   "type": "object",
                   "description": "Map of card id → rows to reveal.",
+                  "x-key-ref": "element",
                   "additionalProperties": {
                     "type": "array",
                     "maxItems": 20,

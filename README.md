@@ -104,7 +104,7 @@ Set `presentation` on a scene to change how its elements look. The [scene presen
 | Groups | `visible`, `opacity`, `fill`, `stroke` |
 | Arrows | `visible`, `opacity`, `color`, `arrowheads` (`start`, `end`, `both`, `none`), `packet`, `highlight` |
 
-Colors accept a name, hex value, or `rgb()`/`hsl()` value. Scene colors take precedence over highlight colors. Set `highlight: false` to suppress node or arrow highlighting.
+Colors accept a CSS color name, a 3-, 4-, 6-, or 8-digit hex value, or a valid `rgb()`/`rgba()`/`hsl()`/`hsla()` value. Functional colors support comma-separated channels or space-separated channels with optional `/ alpha`. Use `transparent` for a transparent color or `none` for no fill or stroke. Invalid colors produce a configuration error. Scene colors take precedence over highlight colors. Set `highlight: false` to suppress node or arrow highlighting.
 
 Hiding a node hides its rows. Hiding a group hides its outline and label, not its children. Hiding an arrow hides its line, label, and arrowheads, but not its packets; use `packet: false` to hide those. Visibility does not change layout or implicitly hide connected elements. Arrowheads control appearance only; set `back: true` on a beat's edge to move its packet in reverse.
 

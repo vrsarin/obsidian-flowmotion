@@ -272,6 +272,7 @@ function walkMapScalars(node: YAMLMap, schema: Schema, def: Scalar['def'], top: 
 function walkMapScalarEntry(pair: import('yaml').Pair<Node, Node>, node: YAMLMap, schema: Schema, def: Scalar['def'], top: Node, out: Scalar[]): void {
   const key = String((pair.key as { value?: unknown })?.value);
   const sub = schema.properties?.[key];
+  if (schema['x-key-ref'] && pair.key) addScalar(out, pair.key, { ref: schema['x-key-ref'] });
   if (def && key === 'id' && pair.value) addScalar(out, pair.value, { def });
   else {
     const additional = typeof schema.additionalProperties === 'object' ? schema.additionalProperties : undefined;

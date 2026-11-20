@@ -1,7 +1,7 @@
 import { deriveEvents } from '../core/auto';
 import { parseKind, sniffKind } from './kinds';
 import { buildTimeline } from '../core/timeline';
-import { COLOR, SAFE_HREF, DiagramError, LIMITS, type Diagram, type End, type EventDef, type FlowDef, type GroupDef, type Line, type NodeDef, type Shape, type Style } from '../core/types';
+import { isColor, SAFE_HREF, DiagramError, LIMITS, type Diagram, type End, type EventDef, type FlowDef, type GroupDef, type Line, type NodeDef, type Shape, type Style } from '../core/types';
 
 /**
  * Text front end: Mermaid / PlantUML-style definitions compiled to the same `Diagram` model
@@ -41,6 +41,44 @@ const SEQ_DECL = /^(participant|actor)\b/i;
 const ARROW = /^(<)?(?:-\.+-|-+|=+|\.{2,})(>>|>|x|o)?/;
 const ID = /^\w+/;
 
+function stripBoundaryUnderscores(value: string): string {
+  let start = 0, end = value.length;
+  while (value[start] === '_') start++;
+  while (end > start && value[end - 1] === '_') end--;
+  return value.slice(start, end);
+}
+
+function subgraphName(rest: string): { id?: string; title: string } {
+  const id = /^\w+/.exec(rest)?.[0];
+  const tail = id ? rest.slice(id.length).trimStart() : '';
+  if (id && !tail) return { id, title: id };
+  if (id && tail.startsWith('[') && tail.endsWith(']')) {
+    let inner = tail.slice(1, -1).trimStart();
+    if (inner.startsWith('"')) inner = inner.slice(1);
+    const quote = inner.indexOf('"');
+    const title = quote < 0 ? inner : inner.slice(0, quote);
+    if (!title.includes(']') && (quote < 0 || !inner.slice(quote + 1).trim())) return { id, title };
+  }
+  return { title: /^"([^"]*)"$/.exec(rest)?.[1] ?? rest };
+}
+
+function linkStyleParts(s: string): [string, string] | undefined {
+  const prefix = /^linkStyle\s+/i.exec(s);
+  if (!prefix) return undefined;
+  const rest = s.slice(prefix[0].length);
+  const defaultMatch = /^default\s+/i.exec(rest);
+  if (defaultMatch) {
+    const style = rest.slice(defaultMatch[0].length);
+    if (style) return ['default', style];
+  }
+  let end = 0;
+  while (end < rest.length && /[,\s\d]/.test(rest[end]!)) end++;
+  let separator = Math.min(end, rest.length - 1);
+  while (separator > 0 && !/\s/.test(rest[separator]!)) separator--;
+  if (separator && separator < rest.length - 1) return [rest.slice(0, separator), rest.slice(separator + 1)];
+  return prefix[0].length >= 'linkStyle'.length + 3 && rest ? [prefix[0].slice(-2, -1), rest] : undefined;
+}
+
 interface Edge { from: string; to: string; text?: string; line: number; op: string }
 
 /** Opening bracket run -> outline, and the closing run it expects. */
@@ -55,7 +93,7 @@ function parseStyle(list: string): Style {
     const i = part.indexOf(':');
     if (i < 0) continue;
     const k = part.slice(0, i).trim(), v = part.slice(i + 1).trim();
-    if ((k === 'fill' || k === 'stroke' || k === 'color') && COLOR.test(v)) out[k] = v;
+    if ((k === 'fill' || k === 'stroke' || k === 'color') && isColor(v)) out[k] = v;
     else if (k === 'stroke-width') { const n = num(v); if (n !== undefined && n >= 0 && n <= 12) out.strokeWidth = n; }
   }
   return out;
@@ -122,13 +160,10 @@ export function parseText(source: string): Diagram {
   }
 
   function subgraph(rest: string, ln: number) {
-    const titlePart = /\[\s*"?([^\]"]*)"?\s*\]/;
-    const m = new RegExp(String.raw`^(\w+)\s*(?:${titlePart.source})?$`).exec(rest)
-      ?? /^"([^"]*)"$/.exec(rest) ?? /^(.+)$/.exec(rest);
-    if (!m) return bad(ln, 'Write "subgraph id [Title]" or "subgraph Title".');
-    const titled = m.length === 3 && /^\w+\s*(\[|$)/.exec(rest);
-    const title = clean(titled ? (m[2] ?? m[1]!) : m[1]!);
-    const gid = titled ? m[1]! : title.replace(/\W+/g, '_').replace(/^_+|_+$/g, '') || `group${groups.size + 1}`;
+    const parsed = subgraphName(rest);
+    if (!rest) return bad(ln, 'Write "subgraph id [Title]" or "subgraph Title".');
+    const title = clean(parsed.title);
+    const gid = parsed.id ?? (stripBoundaryUnderscores(title.replace(/\W+/g, '_')) || `group${groups.size + 1}`);
     if (groups.has(gid) || nodes.has(gid)) return bad(ln, `"${gid}" is already used by another node or subgraph.`);
     if (groups.size >= LIMITS.nodes) return bad(ln, `At most ${LIMITS.nodes} subgraphs.`);
     groups.set(gid, { id: gid, label: title, ...(stack.length && { parent: stack.at(-1) }) });
@@ -155,11 +190,12 @@ export function parseText(source: string): Diagram {
   }
 
   function linkStyleStatement(s: string, ln: number): boolean {
-    const ls = /^linkStyle\s+(default|[,\s\d]+)\s+(.+)$/i.exec(s);
-    if (!ls) return false;
-    const style = parseStyle(ls[2]!);
-    if (ls[1]!.toLowerCase() === 'default') linkStyles.push({ line: ln, idx: 'default', style });
-    else for (const i of ls[1]!.split(',')) {
+    const parts = linkStyleParts(s);
+    if (!parts) return false;
+    const [indices, styleText] = parts;
+    const style = parseStyle(styleText);
+    if (indices.toLowerCase() === 'default') linkStyles.push({ line: ln, idx: 'default', style });
+    else for (const i of indices.split(',')) {
       if (i.trim()) linkStyles.push({ line: ln, idx: Number(i), style });
     }
     return true;
@@ -226,12 +262,23 @@ export function parseText(source: string): Diagram {
   }
 
   function clickStatement(s: string, ln: number): boolean {
-    const call = /(?:(?:call\s+\w+(?:\([^)]*\))?)\s*)?/;
-    const args = /(?:"([^"]*)")?\s*(?:"([^"]*)")?\s*(?:_?(?:blank|self|parent|top))?$/;
-    const ck = new RegExp(String.raw`^click\s+(\w+)\s+(?:href\s+)?${call.source}${args.source}`, 'i').exec(s);
+    const ck = /^click\s+(\w+)\s+/i.exec(s);
     if (!ck) return false;
+    let rest = s.slice(ck[0].length);
+    const hrefPrefix = /^href\s+/i.exec(rest);
+    if (hrefPrefix) rest = rest.slice(hrefPrefix[0].length);
+    const call = /^call\s+\w+(?:\([^)]*\))?/i.exec(rest);
+    if (call) rest = rest.slice(call[0].length).trimStart();
+    const args: string[] = [];
+    for (let i = 0; i < 2 && rest.startsWith('"'); i++) {
+      const end = rest.indexOf('"', 1);
+      if (end < 0) return false;
+      args.push(rest.slice(1, end));
+      rest = rest.slice(end + 1).trimStart();
+    }
+    if (rest && !/^_?(?:blank|self|parent|top)$/i.test(rest)) return false;
     const href = /\bhref\b/i.test(s);
-    clicks.push({ line: ln, id: ck[1]!, url: href ? ck[2] : undefined, tip: href ? ck[3] : ck[2] });
+    clicks.push({ line: ln, id: ck[1]!, url: href ? args[0] : undefined, tip: href ? args[1] : args[0] });
     return true;
   }
 
@@ -468,7 +515,7 @@ const ARROW_AFTER_ID = /^\S+\s*(?:-+>|=+>|<-|\.\.>)/;
 
 function idOf(raw: string, line: number, bad: (l: number, m: string) => void): string {
   const t = raw.replace(/^"|"$/g, '');
-  const id = t.replace(/\W+/g, '_').replace(/^_+|_+$/g, '');
+  const id = stripBoundaryUnderscores(t.replace(/\W+/g, '_'));
   if (!id) bad(line, `"${raw}" cannot be used as a name.`);
   return id || 'x';
 }

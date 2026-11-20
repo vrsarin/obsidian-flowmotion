@@ -300,7 +300,12 @@ class StateParser {
   /** Composite states are groups; found first so an earlier edge to one doesn't create a plain node. */
   private readonly composite = new Set<string>();
   constructor(private readonly lines: [string, number][], private readonly b: Builder) {
-    for (const [s] of lines) { const m = /^state\s+(?:"[^"]*"\s+as\s+)?(\w+)\s*(?:<<\w+>>)?\s*\{\s*$/i.exec(s); if (m) this.composite.add(m[1]!); }
+    for (const [s] of lines) {
+      const beforeBrace = s.trimEnd();
+      if (!beforeBrace.endsWith('{')) continue;
+      const m = /^state\s+(?:"[^"]*"\s+as\s+)?(\w+)(?:\s*<<\w+>>)?$/i.exec(beforeBrace.slice(0, -1).trimEnd());
+      if (m) this.composite.add(m[1]!);
+    }
   }
 
   run() {
@@ -410,7 +415,7 @@ function stereo(s: string): Shape {
 // ---------------------------------------------------------------- class diagram
 
 const DECO: Record<string, End> = { '<|': 'triangle', '|>': 'triangle', '*': 'diamond-filled', o: 'diamond' };
-const CLASS_END = /^(?:"([^"]*)"\s*)?(\w+)\s*(?::\s*(.*))?$/;
+const CLASS_END = /^(?:"([^"]*)"\s*)?(\w+)(?:\s*:\s*(.*)|\s*)$/;
 function classRelation(s: string) {
   const start = /^(\w+)\s*/.exec(s);
   if (!start) return undefined;
@@ -547,9 +552,9 @@ class ErParser {
 
   private attribute(s: string, ln: number) {
     if (s === '}') { this.open = undefined; return; }
-    const a = /^(\S+)\s+(\S+)(.*)$/.exec(s);
+    const a = /^(\S+)\s+(\S+)/.exec(s);
     if (!a) { this.b.bad(ln, `Attribute "${s}" should look like "type name PK".`); return; }
-    const suffix = a[3]!.trim();
+    const suffix = s.slice(a[0].length).trim();
     const quote = suffix.indexOf('"');
     const comment = quote < 0 ? '' : suffix.slice(quote);
     const keysText = (quote < 0 ? suffix : suffix.slice(0, quote)).trim();
@@ -1038,7 +1043,7 @@ class ComponentParser {
     const rest = s.slice(m[0].length);
     const a = declarationName(rest);
     if (!a) return false;
-    const tail = /^(?:as\s+("[^"]*"|[^\s{"][^\s{]*))?\s*(\{)?$/.exec(rest.slice(a.length).replace(/<<[^>]*>>/, '').trim());
+    const tail = /^(?:as\s+("[^"]*"|[^\s{"][^\s{]*))?(?:\s*(\{))?$/.exec(rest.slice(a.length).replace(/<<[^>]*>>/, '').trim());
     if (!tail) return false;
     const kw = m[1]!;
     const [, bAs, open] = tail;

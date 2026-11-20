@@ -43,9 +43,9 @@ const presentation: Schema = { type: 'object', additionalProperties: false, prop
   defaults: { type: 'object', additionalProperties: false, properties: {
     nodes: nodePresentation, groups: groupPresentation, arrows: arrowPresentation,
   } },
-  nodes: { type: 'object', additionalProperties: nodePresentation },
-  groups: { type: 'object', additionalProperties: groupPresentation },
-  arrows: { type: 'object', additionalProperties: arrowPresentation },
+  nodes: { type: 'object', additionalProperties: nodePresentation, 'x-key-ref': 'element' },
+  groups: { type: 'object', additionalProperties: groupPresentation, 'x-key-ref': 'element' },
+  arrows: { type: 'object', additionalProperties: arrowPresentation, 'x-key-ref': 'element' },
 } };
 
 export const storySchema: Schema & { $schema?: string; title?: string } = {
@@ -105,12 +105,12 @@ export const storySchema: Schema & { $schema?: string; title?: string } = {
                 edges: {
                   description: 'Arrows to animate (ids, or {edge, data, back}).',
                   anyOf: [
-                    { type: 'string' },
+                    sid('Arrow id.'),
                     edgeObj,
-                    { type: 'array', items: { anyOf: [{ type: 'string' }, edgeObj] } },
+                    { type: 'array', items: { anyOf: [sid('Arrow id.'), edgeObj] } },
                   ],
                 },
-                show: { type: 'object', description: 'Map of card id → rows to reveal.', additionalProperties: { type: 'array', maxItems: 20, items: row } },
+                show: { type: 'object', description: 'Map of card id → rows to reveal.', 'x-key-ref': 'element', additionalProperties: { type: 'array', maxItems: 20, items: row } },
                 light: { type: 'array', items: sid('Element id.'), description: 'Elements to highlight.' },
               },
             },

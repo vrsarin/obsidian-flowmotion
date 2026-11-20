@@ -1,5 +1,5 @@
 import { deriveEvents } from '../core/auto';
-import { COLOR, DiagramError, LIMITS, type Diagram, type End, type FixedLayout, type FlowDef, type GroupDef, type Line, type NodeDef, type Shape, type Style } from '../core/types';
+import { isColor, DiagramError, LIMITS, type Diagram, type End, type FixedLayout, type FlowDef, type GroupDef, type Line, type NodeDef, type Shape, type Style } from '../core/types';
 import { parseDrawio, plainLabel, styleMap, type MxCell } from './parse';
 
 const END: Record<string, End> = { none: 'none', block: 'arrow', classic: 'arrow', open: 'arrow', openThin: 'arrow', blockThin: 'arrow', classicThin: 'arrow', oval: 'circle', cross: 'cross', diamond: 'diamond-filled', diamondThin: 'diamond', triangle: 'triangle' };
@@ -15,7 +15,7 @@ const shapeOf = (st: Map<string, string>, w: number, h: number): Shape | undefin
   return undefined;
 };
 
-const colour = (v: string | undefined) => (v && COLOR.test(v) && v !== 'none' && v !== 'default' ? v : undefined);
+const colour = (v: string | undefined) => (v && isColor(v) && v !== 'none' && v !== 'default' ? v : undefined);
 
 function createContext(cells: MxCell[]) {
   const byId = new Map(cells.map((c) => [c.id, c]));

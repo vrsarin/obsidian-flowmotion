@@ -16,6 +16,8 @@ export interface Schema {
   pattern?: string;
   /** Completion hint: this text is the id of a node/flow/event/element defined elsewhere in the document. */
   'x-ref'?: 'node' | 'flow' | 'event' | 'element';
+  /** Map keys are ids defined elsewhere in the document. */
+  'x-key-ref'?: NonNullable<Schema['x-ref']>;
   default?: unknown;
   examples?: unknown[];
 }

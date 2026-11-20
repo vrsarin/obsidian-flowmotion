@@ -1,6 +1,6 @@
 import { parse as parseYaml } from 'yaml';
 import { parseView } from '../core/view';
-import { COLOR, DiagramError, LINES, type Line } from '../core/types';
+import { isColor, DiagramError, LINES, type Line } from '../core/types';
 import { TONES, type ArrowPresentation, type Beat, type BeatEdge, type NodePresentation, type RowSpec, type Scene, type ScenePresentation, type ShapePresentation, type StoryElement, type Storyboard, type Tone } from './types';
 
 type Obj = Record<string, unknown>;
@@ -175,7 +175,7 @@ class StoryParser {
 
   private colorProperties(v: Obj, kind: Category, path: string, result: NodePresentation & ArrowPresentation) {
     for (const key of ['fill', 'stroke', 'color'] as const) if (PRESENTATION_KEYS[kind].includes(key) && v[key] !== undefined) {
-      if (typeof v[key] !== 'string' || !COLOR.test(v[key])) this.bad(`${path}.${key}: invalid color`);
+      if (typeof v[key] !== 'string' || !isColor(v[key])) this.bad(`${path}.${key}: invalid color`);
       else result[key] = v[key];
     }
   }

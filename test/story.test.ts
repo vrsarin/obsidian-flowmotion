@@ -104,6 +104,32 @@ scenes:
       }
     });
 
+    const colorSource = (value: string) => `elements:
+  - { id: card, type: rectangle, content: [{ type: title, text: Card }] }
+  - { id: group, type: group, children: [card] }
+  - { id: arrow, type: arrow, start: { id: card }, end: { id: card } }
+scenes:
+  - presentation:
+      nodes: { card: { fill: ${JSON.stringify(value)} } }
+      groups: { group: { stroke: ${JSON.stringify(value)} } }
+      arrows: { arrow: { color: ${JSON.stringify(value)} } }
+    beats: [{}]
+`;
+
+    it.each(['#12345', '#1234567', 'rgb(1)', 'rgb(1, 2)', 'rgb(1,,3)', 'rgb(1, 2%, 3)', 'rgb(1 2 3 /)', 'hsl(120, 50, 50)', 'hsla(120 50% 50% / nope)', 'notacolor'])('rejects malformed scene color %s in parsing and linting', (value) => {
+      const source = colorSource(value);
+      expect(() => parseStoryboard(source)).toThrow(/invalid color/);
+      const issues = lintSource(source);
+      expect(issues.map((issue) => issue.message)).toEqual(['invalid color', 'invalid color', 'invalid color']);
+      expect(issues.map((issue) => issue.from)).toEqual(['fill: ', 'stroke: ', 'color: '].map((property) => source.indexOf(property) + property.length));
+      expect(issues.map((issue) => source.slice(issue.from, issue.to))).toEqual(new Array<string>(3).fill(JSON.stringify(value)));
+    });
+
+    it.each(['#abc', '#abcd', '#ABCDEF', '#11223344', 'rebeccapurple', 'LightSkyBlue', 'transparent', 'none', 'currentColor', 'rgb(1, 2, 3)', 'rgba(10%, 20%, 30%, .5)', 'rgb(1 20% 3 / 50%)', 'hsl(120, 50%, 50%)', 'hsla(0.5turn 50% 50% / .25)'])('accepts supported scene color %s', (value) => {
+      expect(() => parseStoryboard(colorSource(value))).not.toThrow();
+      expect(lintSource(colorSource(value))).toEqual([]);
+    });
+
     it('renders scene defaults, overrides, and reset in static SVG', () => {
       const focus = renderSvg(model, { idPrefix: 'scene', at: 0 });
       expect(focus).toMatch(/data-node="database"[^>]*opacity="0.3"/);

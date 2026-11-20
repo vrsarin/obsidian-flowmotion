@@ -1,5 +1,5 @@
 import { plain } from './str';
-import { COLOR } from './types';
+import { isColor } from './types';
 /** Per-diagram display options, written as top-level keys next to the diagram definition. */
 export interface View {
   controls?: boolean;
@@ -52,7 +52,7 @@ function setMode(raw: Record<string, unknown>, view: View, bad: (message: string
 function setPaper(raw: Record<string, unknown>, view: View, bad: (message: string) => void): void {
   if (raw.paper === undefined) return;
   const colorValue = plain(raw.paper).trim();
-  if (!['light', 'dark', 'none'].includes(colorValue) && !COLOR.test(colorValue)) bad('paper: light, dark, none or a colour like #f4f1ea');
+  if (!['light', 'dark', 'none'].includes(colorValue) && !isColor(colorValue)) bad('paper: light, dark, none or a colour like #f4f1ea');
   else view.paper = colorValue;
 }
 
