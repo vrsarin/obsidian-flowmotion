@@ -1,4 +1,4 @@
-import * as http from "http";
+import * as http from "node:http";
 import type { Server } from "node:http";
 import type { DataAdapter } from "obsidian";
 
@@ -26,15 +26,16 @@ export class StaticServer {
   private server?: Server;
   private starting?: Promise<string>;
   constructor(
-    private adapter: Pick<DataAdapter, "exists" | "readBinary">,
-    private root: () => string,
+    private readonly adapter: Pick<DataAdapter, "exists" | "readBinary">,
+    private readonly root: () => string,
   ) {}
 
   url(): Promise<string> {
-    return (this.starting ??= this.start().catch((e) => {
+    this.starting ??= this.start().catch((e) => {
       this.starting = undefined;
       throw e;
-    }));
+    });
+    return this.starting;
   }
 
   private start(): Promise<string> {
@@ -62,7 +63,8 @@ export class StaticServer {
           rel.split("/").some((part) => part === "." || part === "..")
         )
           return fail(403);
-        const file = `${base}${rel.endsWith("/") ? `${rel}index.html` : rel}`;
+        const path = rel.endsWith("/") ? rel + "index.html" : rel;
+        const file = base + path;
         void (async () => {
           try {
             if (!(await this.adapter.exists(file))) return fail(404);

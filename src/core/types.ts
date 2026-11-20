@@ -12,8 +12,7 @@ export type End = (typeof ENDS)[number];
 
 /** Colours only (validated, so they are safe to put in SVG attributes). */
 export interface Style { fill?: string; stroke?: string; color?: string; strokeWidth?: number }
-/** CSS colour: #hex, rgb()/hsl(), or a plain name. Nothing that could break out of an attribute. */
-export const COLOR = /^(#[0-9a-fA-F]{3,8}|(?:rgb|hsl)a?\([0-9.,%\s/]+\)|[a-zA-Z]{3,24})$/;
+export { isColor } from './color';
 
 export interface NodeDef { /** Optional link (http, https or obsidian: only) and hover text, from Mermaid `click`. */ href?: string; tooltip?: string; id: string; label: string; shape?: Shape; /** Extra text lines under the title (class members, entity attributes, state notes). */ lines?: string[]; /** Id of the containing group. */ group?: string; style?: Style }
 export interface GroupDef { id: string; label?: string; /** Id of the enclosing group (nesting). */ parent?: string }

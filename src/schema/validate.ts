@@ -1,5 +1,5 @@
 import { plain } from '../core/str';
-import { isMap, isScalar, isSeq, parseDocument, type Node, type Pair } from 'yaml';
+import { isMap, isScalar, isSeq, parseDocument, type Node, type Pair, type YAMLMap } from 'yaml';
 import { parseDiagram } from '../core/parse';
 import { DiagramError } from '../core/types';
 import { isTextSource, parseText, TextError } from '../text/parse';
@@ -32,86 +32,175 @@ function suggest(key: string, known: string[]): string | undefined {
   return best;
 }
 
-const typeName = (n: unknown): string => isMap(n) ? 'a mapping' : isSeq(n) ? 'a list' : isScalar(n) ? (typeof n.value === 'string' ? 'text' : n.value === null ? 'empty' : typeof n.value) : 'unknown';
+const typeName = (n: unknown): string => {
+  if (isMap(n)) return 'a mapping';
+  if (isSeq(n)) return 'a list';
+  if (!isScalar(n)) return 'unknown';
+  if (typeof n.value === 'string') return 'text';
+  if (n.value === null) return 'empty';
+  return typeof n.value;
+};
 
 /** Validate a YAML node against the schema subset; reports problems at the offending node. */
 function check(node: Node | null, schema: Schema, out: Issue[], path: string): boolean {
-  const add = (n: unknown, message: string, fix?: string) => { const [from, to] = rangeOf(n); out.push({ from, to, message, severity: 'error', fix }); return false; };
-  if (!node) return true;
-  if (schema.anyOf) {
-    const attempts = schema.anyOf.map((s) => { const sub: Issue[] = []; check(node, s, sub, path); return sub; });
-    if (attempts.some((a) => a.length === 0)) return true;
-    out.push(...(attempts.sort((a, b) => a.length - b.length)[0] ?? []));
+  const add: AddIssue = (n, message, fix) => {
+    const [from, to] = rangeOf(n);
+    out.push({ from, to, message, severity: 'error', fix });
     return false;
-  }
+  };
+  if (!node) return true;
+  if (schema.anyOf) return checkAnyOf(node, schema, out, path);
   const v = isScalar(node) ? node.value : undefined;
   switch (schema.type) {
-    case 'object': {
-      if (!isMap(node)) return add(node, `${path || 'document'}: expected a mapping, found ${typeName(node)}`);
-      const known = Object.keys(schema.properties ?? {});
-      let ok = true;
-      const seen = new Set<string>();
-      for (const pair of node.items as Pair<Node, Node>[]) {
-        const key = plain((pair.key as { value?: unknown })?.value ?? '');
-        if (seen.has(key)) ok = add(pair.key, `${path || 'document'}: duplicate key "${key}"`);
-        seen.add(key);
-        const sub = schema.properties?.[key];
-        if (sub) { if (!check(pair.value, sub, out, (path ? `${path}.${key}` : key))) ok = false; }
-        else if (typeof schema.additionalProperties === 'object') { if (!check(pair.value, schema.additionalProperties, out, (path ? `${path}.${key}` : key))) ok = false; }
-        else if (schema.additionalProperties === false) {
-          const hint = suggest(key, known);
-          ok = add(pair.key, `Unknown key "${key}"${hint ? ` — did you mean "${hint}"?` : known.length ? ` (allowed: ${known.join(', ')})` : ''}`, hint);
-        }
-      }
-      const typos = new Set([...seen].filter((k) => !schema.properties?.[k]).map((k) => suggest(k, known)));
-      for (const r of schema.required ?? []) if (!seen.has(r) && !typos.has(r)) ok = add(node.items[0]?.key ?? node, `${path === '' ? 'Missing' : path + ': missing'} required key "${r}"`);
-      return ok;
-    }
-    case 'array': {
-      if (!isSeq(node)) return add(node, `${path || 'document'}: expected a list, found ${typeName(node)}`);
-      let ok = true;
-      if (schema.minItems !== undefined && node.items.length < schema.minItems) ok = add(node, `${path || 'document'}: needs at least ${schema.minItems} item(s)`);
-      if (schema.maxItems !== undefined && node.items.length > schema.maxItems) ok = add(node, `${path || 'document'}: at most ${schema.maxItems} items`);
-      if (schema.items) node.items.forEach((it, i) => { if (!check(it as Node, schema.items!, out, `${path}[${i}]`)) ok = false; });
-      return ok;
-    }
-    case 'string': {
-      if (!isScalar(node) || (typeof v !== 'string' && typeof v !== 'number')) return add(node, `${path || 'document'}: expected text, found ${typeName(node)}`);
-      const s = String(v);
-      if (schema.enum && !schema.enum.includes(s)) {
-        const hint = suggest(s, schema.enum.map(String));
-        return add(node, `${path || 'document'}: "${s}" is not one of ${schema.enum.join(', ')}${hint ? ` — did you mean "${hint}"?` : ''}`, hint);
-      }
-      if (schema.maxLength !== undefined && s.length > schema.maxLength) return add(node, `${path || 'document'}: longer than ${schema.maxLength} characters`);
-      if (schema.pattern && !new RegExp(schema.pattern).test(s)) return add(node, `${path || 'document'}: "${s}" is not valid here${schema.description ? ` (${schema.description})` : ''}`);
-      return true;
-    }
-    case 'number': case 'integer': {
-      if (!isScalar(node) || typeof v !== 'number') return add(node, `${path || 'document'}: expected a number, found ${typeName(node)}`);
-      if (schema.minimum !== undefined && v < schema.minimum) return add(node, `${path || 'document'}: must be at least ${schema.minimum}`);
-      if (schema.maximum !== undefined && v > schema.maximum) return add(node, `${path || 'document'}: must be at most ${schema.maximum}`);
-      return true;
-    }
-    case 'boolean':
-      return isScalar(node) && typeof v === 'boolean' ? true : add(node, `${path || 'document'}: use true or false`);
+    case 'object': return checkObject(node, schema, out, path, add);
+    case 'array': return checkArray(node, schema, out, path, add);
+    case 'string': return checkString(node, schema, v, path, add);
+    case 'number':
+    case 'integer': return checkNumber(node, schema, v, path, add);
+    case 'boolean': return isScalar(node) && typeof v === 'boolean' ? true : add(node, `${path || 'document'}: use true or false`);
     default: return true;
   }
 }
 
+type AddIssue = (node: unknown, message: string, fix?: string) => false;
+
+function checkAnyOf(node: Node, schema: Schema, out: Issue[], path: string): boolean {
+  const attempts = schema.anyOf!.map((branch) => {
+    const issues: Issue[] = [];
+    check(node, branch, issues, path);
+    return issues;
+  });
+  if (attempts.some((issues) => issues.length === 0)) return true;
+  attempts.sort((a, b) => a.length - b.length);
+  out.push(...(attempts[0] ?? []));
+  return false;
+}
+
+function childPath(path: string, key: string): string {
+  return path ? `${path}.${key}` : key;
+}
+
+function unknownKeyMessage(key: string, hint: string | undefined, known: string[]): string {
+  if (hint) return `Unknown key "${key}" — did you mean "${hint}"?`;
+  if (known.length) return `Unknown key "${key}" (allowed: ${known.join(', ')})`;
+  return `Unknown key "${key}"`;
+}
+
+function checkObject(node: Node, schema: Schema, out: Issue[], path: string, add: AddIssue): boolean {
+  if (!isMap(node)) return add(node, `${path || 'document'}: expected a mapping, found ${typeName(node)}`);
+  const known = Object.keys(schema.properties ?? {});
+  const seen = new Set<string>();
+  let ok = true;
+  for (const pair of node.items as Pair<Node, Node>[]) {
+    if (!checkObjectPair(pair, schema, path, known, seen, out, add)) ok = false;
+  }
+  return checkRequired(node, schema, path, known, seen, add) && ok;
+}
+
+function checkObjectPair(
+  pair: Pair<Node, Node>,
+  schema: Schema,
+  path: string,
+  known: string[],
+  seen: Set<string>,
+  out: Issue[],
+  add: AddIssue,
+): boolean {
+  const key = plain((pair.key as { value?: unknown })?.value ?? '');
+  let ok = true;
+  if (seen.has(key)) ok = add(pair.key, `${path || 'document'}: duplicate key "${key}"`);
+  seen.add(key);
+  const sub = schema.properties?.[key];
+  if (sub) {
+    if (!check(pair.value, sub, out, childPath(path, key))) ok = false;
+  } else if (typeof schema.additionalProperties === 'object') {
+    if (!check(pair.value, schema.additionalProperties, out, childPath(path, key))) ok = false;
+  } else if (schema.additionalProperties === false) {
+    const hint = suggest(key, known);
+    ok = add(pair.key, unknownKeyMessage(key, hint, known), hint);
+  }
+  return ok;
+}
+
+function checkRequired(node: YAMLMap, schema: Schema, path: string, known: string[], seen: Set<string>, add: AddIssue): boolean {
+  const typos = new Set([...seen].filter((key) => !schema.properties?.[key]).map((key) => suggest(key, known)));
+  let ok = true;
+  for (const required of schema.required ?? []) {
+    if (seen.has(required) || typos.has(required)) continue;
+    const label = path === '' ? 'Missing' : `${path}: missing`;
+    ok = add(node.items[0]?.key ?? node, `${label} required key "${required}"`);
+  }
+  return ok;
+}
+
+function checkArray(node: Node, schema: Schema, out: Issue[], path: string, add: AddIssue): boolean {
+  if (!isSeq(node)) return add(node, `${path || 'document'}: expected a list, found ${typeName(node)}`);
+  let ok = true;
+  if (schema.minItems !== undefined && node.items.length < schema.minItems) ok = add(node, `${path || 'document'}: needs at least ${schema.minItems} item(s)`);
+  if (schema.maxItems !== undefined && node.items.length > schema.maxItems) ok = add(node, `${path || 'document'}: at most ${schema.maxItems} items`);
+  if (schema.items) {
+    node.items.forEach((item, index) => {
+      if (!check(item as Node, schema.items!, out, `${path}[${index}]`)) ok = false;
+    });
+  }
+  return ok;
+}
+
+function checkString(node: Node, schema: Schema, value: unknown, path: string, add: AddIssue): boolean {
+  if (!isScalar(node) || (typeof value !== 'string' && typeof value !== 'number')) {
+    return add(node, `${path || 'document'}: expected text, found ${typeName(node)}`);
+  }
+  const text = String(value);
+  if (schema.enum && !schema.enum.includes(text)) {
+    const hint = suggest(text, schema.enum.map(String));
+    const message = `${path || 'document'}: "${text}" is not one of ${schema.enum.join(', ')}` + (hint ? ` — did you mean "${hint}"?` : '');
+    return add(node, message, hint);
+  }
+  if (schema.maxLength !== undefined && text.length > schema.maxLength) return add(node, `${path || 'document'}: longer than ${schema.maxLength} characters`);
+  if (schema.pattern && !new RegExp(schema.pattern).test(text)) {
+    const description = schema.description ? ` (${schema.description})` : '';
+    return add(node, `${path || 'document'}: "${text}" is not valid here${description}`);
+  }
+  return true;
+}
+
+function checkNumber(node: Node, schema: Schema, value: unknown, path: string, add: AddIssue): boolean {
+  if (!isScalar(node) || typeof value !== 'number') return add(node, `${path || 'document'}: expected a number, found ${typeName(node)}`);
+  if (schema.minimum !== undefined && value < schema.minimum) return add(node, `${path || 'document'}: must be at least ${schema.minimum}`);
+  if (schema.maximum !== undefined && value > schema.maximum) return add(node, `${path || 'document'}: must be at most ${schema.maximum}`);
+  return true;
+}
+
 /** Resolve a parser message path like `events[2].flow` to a node range (falls back to the nearest parent). */
 function locate(doc: ReturnType<typeof parseDocument>, path: (string | number)[]): Range {
-  for (let n = path.length; n >= 0; n--) {
-    const prefix = path.slice(0, n);
-    if (n === 0) return rangeOf(doc.contents);
-    const node: unknown = doc.getIn(prefix, true);
-    if (node) {
-      // Prefer the key for a mapping entry: it is the visible label.
-      const parent: unknown = n > 1 ? doc.getIn(prefix.slice(0, -1), true) : doc.contents;
-      if (isMap(parent)) { const pair = parent.items.find((p) => String((p.key as { value?: unknown }).value) === String(prefix[n - 1])); if (pair && n === path.length) return rangeOf(pair.value ?? pair.key); }
-      return rangeOf(node);
-    }
+  if (path.length === 0) return rangeOf(doc.contents);
+  for (let length = path.length; length > 0; length--) {
+    const range = locatePrefix(doc, path, length);
+    if (range) return range;
   }
-  return [0, 1];
+  return rangeOf(doc.contents);
+}
+
+function locatePrefix(doc: ReturnType<typeof parseDocument>, path: (string | number)[], length: number): Range | undefined {
+  const prefix = path.slice(0, length);
+  const node: unknown = doc.getIn(prefix, true);
+  if (!node) return undefined;
+  const pairRange = mappingValueRange(doc, path, prefix, length);
+  return pairRange ?? rangeOf(node);
+}
+
+function mappingValueRange(
+  doc: ReturnType<typeof parseDocument>,
+  path: (string | number)[],
+  prefix: (string | number)[],
+  length: number,
+): Range | undefined {
+  if (length !== path.length) return undefined;
+  const parent: unknown = length > 1 ? doc.getIn(prefix.slice(0, -1), true) : doc.contents;
+  if (!isMap(parent)) return undefined;
+  const key = String(prefix[length - 1]);
+  const pair = parent.items.find((entry) => String((entry.key as { value?: unknown }).value) === key);
+  return pair ? rangeOf(pair.value ?? pair.key) : undefined;
 }
 
 const PATH = /^([A-Za-z_][\w.]*(?:\[\d+\])?(?:\.[\w-]+(?:\[\d+\])?)*): /;
@@ -123,12 +212,32 @@ export type Kind = 'diagram' | 'storyboard';
 export function lintSource(source: string, kind: Kind = detectKind(source)): Issue[] {
   if (source.trim() === '') return [];
   if (isTextSource(source)) return lintText(source);
+  return lintYamlSource(source, kind);
+}
+
+function lintYamlSource(source: string, kind: Kind): Issue[] {
   const doc = parseDocument(source, { strict: true, prettyErrors: false });
-  if (doc.errors.length) return doc.errors.slice(0, 5).map((e) => ({ from: e.pos[0], to: Math.max(e.pos[1], e.pos[0] + 1), message: `YAML: ${e.message.split('\n')[0]}`, severity: 'error' as const }));
-  const issues: Issue[] = [];
+  const syntaxIssues = yamlIssues(doc);
+  if (syntaxIssues) return syntaxIssues;
   if (isMap(doc.contents) && doc.contents.has('src')) return lintEmbed(source, doc.contents);
+  const issues: Issue[] = [];
   check(doc.contents, kind === 'storyboard' ? storySchema : diagramSchema, issues, '');
   if (issues.length) return issues.slice(0, 30);
+  return lintParsedDocument(source, kind, doc);
+}
+
+function yamlIssues(doc: ReturnType<typeof parseDocument>): Issue[] | undefined {
+  if (!doc.errors.length) return undefined;
+  return doc.errors.slice(0, 5).map((error) => ({
+    from: error.pos[0],
+    to: Math.max(error.pos[1], error.pos[0] + 1),
+    message: `YAML: ${error.message.split('\n')[0]}`,
+    severity: 'error' as const,
+  }));
+}
+
+function lintParsedDocument(source: string, kind: Kind, doc: ReturnType<typeof parseDocument>): Issue[] {
+  const issues: Issue[] = [];
   try { kind === 'storyboard' ? parseStoryboard(source) : parseDiagram(source); }
   catch (e) {
     if (!(e instanceof DiagramError)) throw e;
@@ -144,18 +253,31 @@ export function lintSource(source: string, kind: Kind = detectKind(source)): Iss
 
 /** Text-DSL problems, located by line. */
 function lintText(source: string): Issue[] {
-  const starts: number[] = [];
-  source.split('\n').reduce((o, l) => (starts.push(o), o + l.length + 1), 0);
+  const starts = lineStarts(source);
   try { parseText(source); return []; }
   catch (e) {
     if (!(e instanceof DiagramError)) throw e;
-    const located = e instanceof TextError ? e.located : e.problems.map((message) => ({ line: 1, message }));
-    return located.map(({ line, message }) => {
-      const from = starts[line - 1] ?? 0;
-      const len = (source.slice(from).split('\n')[0] ?? '').length;
-      return { from, to: from + Math.max(1, len), message, severity: 'error' as const };
-    });
+    return textIssues(source, starts, e);
   }
+}
+
+function lineStarts(source: string): number[] {
+  const starts: number[] = [];
+  let offset = 0;
+  for (const line of source.split('\n')) {
+    starts.push(offset);
+    offset += line.length + 1;
+  }
+  return starts;
+}
+
+function textIssues(source: string, starts: number[], error: DiagramError): Issue[] {
+  const located = error instanceof TextError ? error.located : error.problems.map((message) => ({ line: 1, message }));
+  return located.map(({ line, message }) => {
+    const from = starts[line - 1] ?? 0;
+    const len = (source.slice(from).split('\n')[0] ?? '').length;
+    return { from, to: from + Math.max(1, len), message, severity: 'error' as const };
+  });
 }
 
 /** Hints that are not errors: nodes and flows nothing refers to. */

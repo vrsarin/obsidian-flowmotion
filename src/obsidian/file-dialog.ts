@@ -27,13 +27,13 @@ export function chooseDiagramFile(
 class FileDialog extends Modal {
   private done = false;
   private name = "Untitled";
-  private folder: string;
+  private readonly folder: string;
   private body!: HTMLElement;
 
   constructor(
     app: App,
     noteFolder: string,
-    private resolve: (c: Choice | undefined) => void,
+    private readonly resolve: (c: Choice | undefined) => void,
   ) {
     super(app);
     this.folder = noteFolder && noteFolder !== "/" ? noteFolder : "/";
@@ -61,13 +61,12 @@ class FileDialog extends Modal {
     const err = this.body.createDiv({ cls: "mod-warning" });
     const check = () => {
       const n = this.name.trim().replace(/\.flow$/i, "");
-      const msg = !n
-        ? "Enter a name."
-        : BAD.test(n)
-          ? 'A name cannot contain \\ / : * ? " < > | # ^ [ ]'
-          : this.app.vault.getAbstractFileByPath(this.pathOf(n))
-            ? `${this.pathOf(n)} already exists.`
-            : "";
+      let msg = "";
+      if (!n) msg = "Enter a name.";
+      else if (BAD.test(n))
+        msg = String.raw`A name cannot contain \ / : * ? " < > | # ^ [ ]`;
+      else if (this.app.vault.getAbstractFileByPath(this.pathOf(n)))
+        msg = `${this.pathOf(n)} already exists.`;
       err.setText(msg);
       return msg ? undefined : n;
     };

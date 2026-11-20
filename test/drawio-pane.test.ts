@@ -102,4 +102,25 @@ describe('DrawioPane', () => {
     await expect((pane as any).export('x')).rejects.toThrow(/closed/);
     await pane.flush();
   });
+
+  it('flushes a newer revision only after the current export completes', async () => {
+    const { pane } = setup();
+    pane.set(''); await flush();
+    const post = vi.spyOn(pane as any, 'post').mockImplementation(() => {});
+    msg(pane, { event: 'init' });
+    const saved = pane.flush();
+    await flush();
+    msg(pane, { event: 'autosave', xml: '<mxfile id="new"/>' });
+    expect(post.mock.calls.filter(([m]) => (m as any).action === 'export')).toHaveLength(1);
+    msg(pane, { event: 'export', data: 'data:image/svg+xml,%3Csvg%2F%3E' });
+    await flush();
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'export', xml: '<mxfile id="new"/>' }));
+    msg(pane, { event: 'export', data: 'data:image/svg+xml,%3Csvg%2F%3E' });
+    await flush();
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'export', xml: '<mxfile id="new"/>' }));
+    msg(pane, { event: 'export', data: 'data:image/svg+xml,%3Csvg%2F%3E' });
+    await saved;
+    expect(post.mock.calls.filter(([m]) => (m as any).action === 'export')).toHaveLength(3);
+    pane.destroy();
+  });
 });

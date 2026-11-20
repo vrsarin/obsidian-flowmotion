@@ -1,4 +1,5 @@
 import { TONES } from '../story/types';
+import { LINES } from '../core/types';
 import { srcProperty, text, viewProperties } from './common';
 import type { Schema } from './types';
 
@@ -19,6 +20,33 @@ const row: Schema = {
 };
 
 const edgeObj: Schema = { type: 'object', required: ['edge'], additionalProperties: false, properties: { edge: sid('Arrow id.'), data: t500('Packet label.'), back: { type: 'boolean', description: 'Animate from end to start.' } } };
+
+const visibility: Record<string, Schema> = {
+  visible: { type: 'boolean', description: 'Show this element.' },
+  opacity: { type: 'number', minimum: 0, maximum: 1, description: 'Element opacity.' },
+};
+const color = (description: string): Schema => ({ type: 'string', description });
+const nodePresentation: Schema = { type: 'object', additionalProperties: false, properties: {
+  ...visibility, fill: color('Fill color.'), stroke: color('Outline color.'),
+  highlight: { type: 'boolean', description: 'Allow beat highlighting.' },
+} };
+const groupPresentation: Schema = { type: 'object', additionalProperties: false, properties: {
+  ...visibility, fill: color('Fill color.'), stroke: color('Outline color.'),
+} };
+const arrowPresentation: Schema = { type: 'object', additionalProperties: false, properties: {
+  ...visibility, color: color('Connector and arrowhead color.'),
+  arrowheads: { type: 'string', enum: ['start', 'end', 'both', 'none'] },
+  packet: { type: 'boolean', description: 'Show moving packets independently of the connector.' },
+  highlight: { type: 'boolean', description: 'Allow active connector highlighting.' },
+} };
+const presentation: Schema = { type: 'object', additionalProperties: false, properties: {
+  defaults: { type: 'object', additionalProperties: false, properties: {
+    nodes: nodePresentation, groups: groupPresentation, arrows: arrowPresentation,
+  } },
+  nodes: { type: 'object', additionalProperties: nodePresentation, 'x-key-ref': 'element' },
+  groups: { type: 'object', additionalProperties: groupPresentation, 'x-key-ref': 'element' },
+  arrows: { type: 'object', additionalProperties: arrowPresentation, 'x-key-ref': 'element' },
+} };
 
 export const storySchema: Schema & { $schema?: string; title?: string } = {
   $schema: 'http://json-schema.org/draft-07/schema#',
@@ -54,6 +82,7 @@ export const storySchema: Schema & { $schema?: string; title?: string } = {
           start: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: sid('Element the arrow starts at.') } },
           end: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: sid('Element the arrow ends at.') } },
           quiet: { type: 'boolean', description: 'arrow: draw faintly.' },
+          line: { type: 'string', enum: [...LINES], description: 'arrow: connector line style.' },
           route: { type: 'string', description: 'Accepted for compatibility; currently ignored.' },
         },
       },
@@ -65,6 +94,7 @@ export const storySchema: Schema & { $schema?: string; title?: string } = {
         properties: {
           label: t500('Scene name.'),
           caption: t500('Accepted for compatibility; currently ignored.'),
+          presentation,
           beats: {
             type: 'array', minItems: 1, description: 'Steps shown one after another.',
             items: {
@@ -75,12 +105,12 @@ export const storySchema: Schema & { $schema?: string; title?: string } = {
                 edges: {
                   description: 'Arrows to animate (ids, or {edge, data, back}).',
                   anyOf: [
-                    { type: 'string' },
+                    sid('Arrow id.'),
                     edgeObj,
-                    { type: 'array', items: { anyOf: [{ type: 'string' }, edgeObj] } },
+                    { type: 'array', items: { anyOf: [sid('Arrow id.'), edgeObj] } },
                   ],
                 },
-                show: { type: 'object', description: 'Map of card id → rows to reveal.', additionalProperties: { type: 'array', maxItems: 20, items: row } },
+                show: { type: 'object', description: 'Map of card id → rows to reveal.', 'x-key-ref': 'element', additionalProperties: { type: 'array', maxItems: 20, items: row } },
                 light: { type: 'array', items: sid('Element id.'), description: 'Elements to highlight.' },
               },
             },

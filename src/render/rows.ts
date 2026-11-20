@@ -30,10 +30,11 @@ export function layoutRows(rows: RowSpec[], innerW: number): { parts: RowPart[];
       const nodes = names.map((name, i) => {
         const w = textWidth(name, 11) + 14, left = i === 0;
         const rest = names.length - 1, k = i - 1;
+        const nodeY = left || rest === 1 ? GRAPH_H / 2 : 14 + (k * (GRAPH_H - 28)) / (rest - 1);
         return {
           name, w, lit: (r.lit ?? []).includes(name),
           x: left ? Math.max(w / 2 + 2, innerW * 0.2) : Math.min(innerW - w / 2 - 2, innerW * 0.72),
-          y: left ? GRAPH_H / 2 : rest === 1 ? GRAPH_H / 2 : 14 + (k * (GRAPH_H - 28)) / (rest - 1),
+          y: nodeY,
         };
       });
       const idx = (n: string) => names.indexOf(n);

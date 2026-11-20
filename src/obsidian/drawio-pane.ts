@@ -5,7 +5,7 @@ export const DRAWIO_SUFFIX = '.drawio.flow';
 export const isDrawioName = (name: string | undefined) => !!name && name.toLowerCase().endsWith(DRAWIO_SUFFIX);
 
 export const BLANK_MXFILE = '<mxfile><diagram name="Page-1" id="page1"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel></diagram></mxfile>';
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const esc = (s: string) => s.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 /** A new file's content: an empty draw.io SVG (draw.io reads and writes this format; so does FlowMotion). */
 export const BLANK_DRAWIO = `<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="1px" height="1px" viewBox="0 0 1 1" content="${esc(BLANK_MXFILE)}"><g/></svg>\n`;
 
@@ -23,9 +23,9 @@ export class DrawioPane {
   private dead = false;
   private exportQueue: Promise<void> = Promise.resolve();
   private exportRequest?: { resolve(): void; reject(error: Error): void; timer: number };
-  private onMsg = (ev: MessageEvent) => this.handle(ev);
+  private readonly onMsg = (ev: MessageEvent) => this.handle(ev);
 
-  constructor(parent: HTMLElement, private o: DrawioOptions) {
+  constructor(parent: HTMLElement, private readonly o: DrawioOptions) {
     this.root = parent.createDiv({ cls: 'fm-drawio' });
     window.addEventListener('message', this.onMsg);
   }
@@ -75,17 +75,16 @@ export class DrawioPane {
   /** Exports the latest editor state before the add-on server or files are removed. */
   async flush(): Promise<void> {
     if (!this.frame || !this.ready || this.dead) return;
-    let revision: number;
-    do {
-      revision = this.revision;
-      await this.export(this.pending);
-    } while (revision !== this.revision);
+    const revision = this.revision;
+    await this.export(this.pending);
+    // Saving is serialized: a newer revision must be exported after this one completes.
+    if (revision !== this.revision) await this.flush();
   }
 
   private revision = 0;
 
   private handle(ev: MessageEvent) {
-    if (this.dead || !this.frame || ev.source !== this.frame.contentWindow || typeof ev.data !== 'string') return;
+    if (this.dead || !this.frame?.contentWindow || ev.source !== this.frame.contentWindow || typeof ev.data !== 'string') return;
     let m: { event?: string; xml?: string; data?: string; format?: string };
     try { m = JSON.parse(ev.data) as typeof m; } catch { return; }
     switch (m.event) {
@@ -132,7 +131,7 @@ export function decodeSvg(uri: string): string | undefined {
   const m = /^data:image\/svg\+xml(?:;charset=[\w-]+)?(;base64)?,([\s\S]*)$/.exec(uri);
   if (!m) return undefined;
   try {
-    if (m[1]) { const bin = atob(m[2]!); return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))); }
+    if (m[1]) { const bin = atob(m[2]!); return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.codePointAt(0)!)); }
     return decodeURIComponent(m[2]!);
   } catch { return undefined; }
 }

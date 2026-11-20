@@ -15,7 +15,7 @@ export function parseEmbed(source: string): Embed | undefined {
   const o = raw as Record<string, unknown>;
   const problems: string[] = [];
   const bad = (m: string) => problems.push(m);
-  const allowed = ['src', 'controls', 'controlsPosition', 'mode', 'height', 'width', 'header', 'footer', 'paper'];
+  const allowed = ['src', 'controls', 'interactive', 'controlsPosition', 'mode', 'height', 'width', 'header', 'footer', 'paper'];
   for (const k of Object.keys(o)) if (!allowed.includes(k)) bad(`${k}: not allowed next to "src" (the diagram comes from the file); allowed: ${allowed.join(', ')}`);
   if (typeof o.src !== 'string' || !o.src.trim()) bad('src: a file path like ./diagram.yaml');
   else if (!/\.(ya?ml|json|flow|svg|drawio)$/i.test(o.src.trim())) bad('src: file must end in .flow, .drawio, .svg, .yaml, .yml or .json');
@@ -42,5 +42,5 @@ export function relativePath(fromDir: string, to: string): string {
   const a = fromDir ? fromDir.split('/') : [], b = to.split('/');
   let i = 0;
   while (i < a.length && i < b.length - 1 && a[i] === b[i]) i++;
-  return [...Array<string>(a.length - i).fill('..'), ...b.slice(i)].join('/');
+  return [...new Array<string>(a.length - i).fill('..'), ...b.slice(i)].join('/');
 }

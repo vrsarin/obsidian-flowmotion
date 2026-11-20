@@ -21,8 +21,7 @@ export function layoutGantt(d: Diagram): Layout {
   }
 
   // Rows grouped by section, in the order tasks were written.
-  const rowOf = new Map<string, number>();
-  let row = 0, lastGroup: string | undefined;
+  let lastGroup: string | undefined;
   const bands = new Map<string, { y0: number; y1: number }>();
   const gap = 10;
   let y = TOP;
@@ -31,7 +30,7 @@ export function layoutGantt(d: Diagram): Layout {
     lastGroup = n.group;
     const s = g.tasks[n.id]!;
     const cy = y + ROW / 2;
-    y += ROW; rowOf.set(n.id, row++);
+    y += ROW;
     if (n.group) { const b = bands.get(n.group); if (b) b.y1 = y; else bands.set(n.group, { y0: y - ROW, y1: y }); }
     const w = s.milestone ? BAR + 6 : Math.max(8, (s.end - s.start) * perDay);
     const x = s.milestone ? X(s.start) - (BAR + 6) / 2 : X(s.start);

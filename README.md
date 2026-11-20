@@ -71,6 +71,8 @@ That's it. Create a note and paste a diagram from the example above.
 
 To edit a diagram with help (autocomplete, error checks, and a live preview), hover over it and click **✎ Edit**.
 
+Select **SVG ↓** on a diagram to download an animated SVG. To play one storyboard beat at a time, add `interactive: true` to its definition or `src:` block, then select **Next** for each beat.
+
 ## What you can draw
 
 | Diagram             | Use it for                           |
@@ -85,6 +87,28 @@ To edit a diagram with help (autocomplete, error checks, and a live preview), ho
 | Class and ER        | Data models                          |
 
 Full syntax: [Writing diagrams](https://github.com/vrsarin/obsidian-flowmotion/wiki/Writing-Diagrams).
+
+## Authoring reference for people and AI tools
+
+Use the [authoring reference](https://github.com/vrsarin/obsidian-flowmotion/wiki/Authoring-Reference) as the canonical keyword guide. It covers both YAML formats, display options, defaults, limits, scene behavior, and unsupported constructs. The [cookbook](https://github.com/vrsarin/obsidian-flowmotion/wiki/Authoring-Cookbook) provides complete complex examples, validation commands, and a reusable authoring prompt for Claude, Codex, Cursor, Copilot, or another coding tool.
+
+Match the reference and schemas to your plugin build. The reference identifies development features that older installed releases may not support.
+
+## Storyboard scene presentation
+
+Set `presentation` on a scene to change how its elements look. The [scene presentation example](examples/scene-presentation.flow) shows the syntax. Use `defaults` for all `nodes`, `groups`, or `arrows`, and use the corresponding maps to override individual element IDs. Each scene starts with the original appearance; settings do not carry over.
+
+| Elements | Options |
+| --- | --- |
+| Nodes | `visible`, `opacity` (0–1), `fill`, `stroke`, `highlight` |
+| Groups | `visible`, `opacity`, `fill`, `stroke` |
+| Arrows | `visible`, `opacity`, `color`, `arrowheads` (`start`, `end`, `both`, `none`), `packet`, `highlight` |
+
+Colors accept a CSS color name, a 3-, 4-, 6-, or 8-digit hex value, or a valid `rgb()`/`rgba()`/`hsl()`/`hsla()` value. Functional colors support comma-separated channels or space-separated channels with optional `/ alpha`. Use `transparent` for a transparent color or `none` for no fill or stroke. Invalid colors produce a configuration error. Scene colors take precedence over highlight colors. Set `highlight: false` to suppress node or arrow highlighting.
+
+Hiding a node hides its rows. Hiding a group hides its outline and label, not its children. Hiding an arrow hides its line, label, and arrowheads, but not its packets; use `packet: false` to hide those. Visibility does not change layout or implicitly hide connected elements. Arrowheads control appearance only; set `back: true` on a beat's edge to move its packet in reverse.
+
+For a dotted storyboard connector, set `line: dotted` on the arrow element. The other line styles are `solid` and `thick`.
 
 ## Optional add-ons
 

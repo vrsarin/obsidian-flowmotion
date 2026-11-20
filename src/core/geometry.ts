@@ -21,7 +21,7 @@ function roundCorners(pts: Pt[], radius: number, steps = 8): Pt[] {
       out.push({ x: m * m * s.x + 2 * m * t * p.x + t * t * e.x, y: m * m * s.y + 2 * m * t * p.y + t * t * e.y });
     }
   }
-  out.push(pts[pts.length - 1]!);
+  out.push(pts.at(-1)!);
   return out;
 }
 
@@ -42,7 +42,7 @@ function cubic(a: Pt, b: Pt, horizontal: boolean, steps = 32): Pt[] {
 export function makePath(route: Pt[], opts: { curve?: boolean; horizontal?: boolean } = {}): Path {
   const raw = route.length >= 2 ? route : [route[0] ?? { x: 0, y: 0 }, route[0] ?? { x: 0, y: 0 }];
   const points = opts.curve
-    ? cubic(raw[0]!, raw[raw.length - 1]!, opts.horizontal ?? true)
+    ? cubic(raw[0]!, raw.at(-1)!, opts.horizontal ?? true)
     : roundCorners(raw, 12);
   return pathFromPoints(points);
 }
@@ -53,7 +53,7 @@ export function pathFromPoints(points: Pt[]): Path {
   for (let i = 1; i < points.length; i++) cum.push(cum[i - 1]! + dist(points[i - 1]!, points[i]!));
   const f = (n: number) => Math.round(n * 100) / 100;
   const d = points.map((p, i) => `${i ? 'L' : 'M'}${f(p.x)} ${f(p.y)}`).join(' ');
-  return { points, d, length: cum[cum.length - 1]!, cum };
+  return { points, d, length: cum.at(-1)!, cum };
 }
 
 /** Point at fraction 0..1 of arc length. */

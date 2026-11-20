@@ -9,7 +9,7 @@ const SVG_TAGS = new Set(['g', 'path', 'rect', 'circle', 'ellipse', 'line', 'pol
   'linearGradient', 'radialGradient', 'stop', 'clipPath', 'mask', 'pattern', 'marker', 'filter', 'feGaussianBlur', 'feOffset', 'feColorMatrix', 'feMerge', 'feMergeNode', 'feFlood', 'feComposite', 'feDropShadow', 'a']);
 const HTML_TAGS = new Set(['div', 'span', 'p', 'br', 'b', 'i', 'u', 's', 'strong', 'em', 'font', 'sub', 'sup', 'small', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'pre', 'code']);
 const VOID = new Set(['br']);
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const esc = (s: string) => s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 
 const SAFE_CSS_FUNCTIONS = new Set(['var', 'light-dark', 'rgb', 'rgba', 'hsl', 'hsla', 'calc', 'min', 'max', 'clamp']);
 
@@ -20,7 +20,17 @@ const cssOk = (v: string) => {
   if (withoutUrls.includes('!') || /\burl\s*\(/i.test(withoutUrls)) return false;
   return [...withoutUrls.matchAll(/([-\w]+)\s*\(/g)].every((m) => SAFE_CSS_FUNCTIONS.has(m[1]!.toLowerCase()));
 };
-const refOk = (v: string) => v.startsWith('#') || /^data:image\/(?:png|jpe?g|gif|webp)(?:;[\w=.-]+)*;base64,[A-Za-z0-9+/=\s]*$/i.test(v);
+const refOk = (v: string) => v.startsWith('#') || /^data:image\/(?:png|jpe?g|gif|webp)(?:;[\w=.-]+)*;base64,[a-z0-9+/=\s]*$/i.test(v);
+
+function safeDeclarations(selectors: string[], body: string, rootId: string): string[] | undefined {
+  const declarations = body.split(';').map((d) => d.trim()).filter(Boolean);
+  const safe = selectors.length > 0 && selectors.every((s) => s === `#${rootId}`) &&
+    declarations.length > 0 && declarations.every((d) => {
+      const m = /^(--ge-adaptive-(?:bg|fg))\s*:\s*(.+)$/.exec(d);
+      return !!m && cssOk(m[2]!);
+    });
+  return safe ? declarations : undefined;
+}
 
 function safeStylesheet(src: string, rootId: string | undefined, scopedId: string): string {
   if (!rootId || !/^[\w.-]+$/.test(rootId)) return '';
@@ -34,19 +44,25 @@ function safeStylesheet(src: string, rootId: string | undefined, scopedId: strin
     while (/\s/.test(css[at] ?? '')) at++;
     if (at === css.length) break;
     const open = css.indexOf('{', at), close = open < 0 ? -1 : css.indexOf('}', open + 1);
-    if (open < 0 || close < 0 || css.indexOf('{', open + 1) >= 0 && css.indexOf('{', open + 1) < close) return '';
+    if (open < 0 || close < 0 || css.slice(open + 1, close).includes('{')) return '';
     const selectors = css.slice(at, open).trim().split(',').map((s) => s.trim());
     const body = css.slice(open + 1, close);
-    const declarations = body.split(';').map((d) => d.trim()).filter(Boolean);
-    const safe = selectors.length > 0 && selectors.every((s) => s === `#${rootId}`) &&
-      declarations.length > 0 && declarations.every((d) => {
-        const m = /^(--ge-adaptive-(?:bg|fg))\s*:\s*(.+)$/.exec(d);
-        return !!m && cssOk(m[2]!);
-      });
-    if (safe) output.push(`#${scopedId}{${declarations.join(';')}}`);
+    const declarations = safeDeclarations(selectors, body, rootId);
+    if (declarations) output.push(`#${scopedId}{${declarations.join(';')}}`);
     at = close + 1;
   }
   return output.join('');
+}
+
+function validAttribute(k: string): boolean {
+  return /^[a-zA-Z][\w:.-]*$/.test(k) && !/^on/i.test(k) && k !== 'xmlns' && !k.startsWith('xmlns:') && k !== 'content' && k !== 'requiredFeatures';
+}
+
+function renderTag(name: string, inHtml: boolean, attrs: string[], kids: string): string {
+  const htmlTag = name === 'div' || (inHtml && HTML_TAGS.has(name));
+  if (htmlTag && VOID.has(name)) return `<${name}/>`;
+  const tag = !htmlTag && name === 'a' ? 'g' : name;
+  return `<${tag}${attrs.length ? ' ' + attrs.join(' ') : ''}>${kids}</${tag}>`;
 }
 
 /** The sanitised content of a draw.io SVG (without the outer <svg>), with every id prefixed so several copies can share a page. */
@@ -56,45 +72,43 @@ export function sanitizeSvg(svg: string, prefix: string): (Backdrop & { rootId?:
   const root = find(doc, 'svg');
   if (!root) return undefined;
   const vb = (root.attrs.viewBox ?? '').trim().split(/[\s,]+/).map(Number);
-  const w = vb.length === 4 && vb.every(Number.isFinite) ? vb[2]! : parseFloat(root.attrs.width ?? ''), h = vb.length === 4 && vb.every(Number.isFinite) ? vb[3]! : parseFloat(root.attrs.height ?? '');
+  const w = vb.length === 4 && vb.every(Number.isFinite) ? vb[2]! : Number.parseFloat(root.attrs.width ?? ''), h = vb.length === 4 && vb.every(Number.isFinite) ? vb[3]! : Number.parseFloat(root.attrs.height ?? '');
   if (!(w > 0 && h > 0) || w > 100000 || h > 100000) return undefined;
   const rootId = root.attrs.id;
   const pid = (id: string) => `${prefix}-${id}`;
   const rewriteRefs = (v: string) => v.replace(/url\(\s*(['"]?)#([^'")]+)\1\s*\)/g, (_m, _q, id: string) => `url(#${pid(id)})`);
 
+  const attribute = (k: string, v: string): string | undefined => {
+    const key = k.replace(/^xlink:/, 'xlink:');
+    if (!validAttribute(k)) return undefined;
+    if (k === 'href' || k === 'xlink:href') {
+      if (!refOk(v)) return undefined;
+      const href = v.startsWith('#') ? '#' + pid(v.slice(1)) : v;
+      return `${key}="${esc(href)}"`;
+    }
+    if (k === 'id') return `id="${esc(pid(v))}"`;
+    if (/^(aria-labelledby|aria-describedby|for)$/.test(k)) {
+      return `${key}="${esc(v.split(/\s+/).filter(Boolean).map(pid).join(' '))}"`;
+    }
+    if (k === 'style' || /^(fill|stroke|filter|clip-path|mask|marker-start|marker-mid|marker-end)$/.test(k)) {
+      if (!cssOk(v)) return undefined;
+      return `${k}="${esc(rewriteRefs(v))}"`;
+    }
+    if (/javascript:|data:text|vbscript:/i.test(v)) return undefined;
+    return `${k}="${esc(v)}"`;
+  };
   const out = (n: XNode, inHtml: boolean): string => {
     if (n.tag === '#text') return esc(n.text ?? '');
     const name = n.tag.replace(/^svg:/, '');
-    const html = inHtml || name === 'foreignObject' ? inHtml : false;
-    const isHtml = inHtml && HTML_TAGS.has(name);
-    if (!isHtml && !SVG_TAGS.has(name) && !(inHtml && HTML_TAGS.has(name))) return ''; // unknown element: drop with its children
+    if (!SVG_TAGS.has(name) && !(inHtml && HTML_TAGS.has(name))) return '';
     if (name === 'style') {
       const css = n.children.map((c) => c.text ?? '').join('');
       return `<style>${safeStylesheet(css, rootId, rootId ? pid(rootId) : '')}</style>`;
     }
-    const attrs: string[] = [];
-    for (const [k, v] of Object.entries(n.attrs)) {
-      const key = k.replace(/^xlink:/, 'xlink:');
-      if (!/^[a-zA-Z][\w:.-]*$/.test(k) || /^on/i.test(k) || k === 'xmlns' || k.startsWith('xmlns:') || k === 'content' || k === 'requiredFeatures') continue;
-      if (k === 'href' || k === 'xlink:href') {
-        if (!refOk(v)) continue;
-        attrs.push(`${key}="${esc(v.startsWith('#') ? `#${pid(v.slice(1))}` : v)}"`);
-        continue;
-      }
-      if (k === 'id') { attrs.push(`id="${esc(pid(v))}"`); continue; }
-      if (/^(aria-labelledby|aria-describedby|for)$/.test(k)) {
-        attrs.push(`${key}="${esc(v.split(/\s+/).filter(Boolean).map(pid).join(' '))}"`);
-        continue;
-      }
-      if (k === 'style' || /^(fill|stroke|filter|clip-path|mask|marker-start|marker-mid|marker-end)$/.test(k)) { if (!cssOk(v)) continue; attrs.push(`${k}="${esc(rewriteRefs(v))}"`); continue; }
-      if (/javascript:|data:text|vbscript:/i.test(v)) continue;
-      attrs.push(`${k}="${esc(v)}"`);
-    }
-    const kids = n.children.map((c) => out(c, name === 'foreignObject' ? true : html || inHtml)).join('');
+    const attrs = Object.entries(n.attrs).map(([k, v]) => attribute(k, v)).filter((v): v is string => v !== undefined);
+    const kids = n.children.map((c) => out(c, name === 'foreignObject' || inHtml)).join('');
     if (name === 'div' && inHtml) attrs.push('xmlns="http://www.w3.org/1999/xhtml"');
-    const tag = name === 'a' ? 'g' : name;
-    if (name === 'div' || (inHtml && HTML_TAGS.has(name))) return VOID.has(name) ? `<${name}/>` : `<${name}${attrs.length ? ' ' + attrs.join(' ') : ''}>${kids}</${name}>`;
-    return `<${tag}${attrs.length ? ' ' + attrs.join(' ') : ''}>${kids}</${tag}>`;
+    return renderTag(name, inHtml, attrs, kids);
   };
   const inner = root.children.map((c) => out(c, false)).join('');
   return { inner, w, h, ...(rootId && { rootId: pid(rootId) }) };
@@ -104,21 +118,20 @@ export function sanitizeSvg(svg: string, prefix: string): (Backdrop & { rootId?:
 export function namespaceSanitizedSvg(inner: string, prefix: string, replacement: string): string {
   let doc: XNode;
   try { doc = parseXml(inner); } catch { return ''; }
-  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const ref = new RegExp(`#${escapedPrefix}-([\\w.-]+)`, 'g');
-  const escAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+  const ref = new RegExp(String.raw`#${escapedPrefix}-([\w.-]+)`, 'g');
+  const rewrite = (v: string) => v.replace(ref, `#${replacement}-$1`);
+  const rewriteId = (id: string) => id.startsWith(`${prefix}-`) ? `${replacement}-${id.slice(prefix.length + 1)}` : id;
   const serialize = (n: XNode, inStyle = false): string => {
-    if (n.tag === '#text') return esc(inStyle ? (n.text ?? '').replace(ref, `#${replacement}-$1`) : n.text ?? '');
+    if (n.tag === '#text') return esc(inStyle ? rewrite(n.text ?? '') : n.text ?? '');
     const attrs = Object.entries(n.attrs).map(([k, v]) => {
-      const value = k === 'id' && v.startsWith(`${prefix}-`)
-        ? `${replacement}-${v.slice(prefix.length + 1)}`
-        : /^(aria-labelledby|aria-describedby|for)$/.test(k)
-          ? v.split(/\s+/).map((id) => id.startsWith(`${prefix}-`) ? `${replacement}-${id.slice(prefix.length + 1)}` : id).join(' ')
-          : v.replace(ref, `#${replacement}-$1`);
-      return `${k}="${escAttr(value)}"`;
+      let value = rewrite(v);
+      if (k === 'id' && v.startsWith(`${prefix}-`)) value = rewriteId(v);
+      else if (/^(aria-labelledby|aria-describedby|for)$/.test(k)) value = v.split(/\s+/).map(rewriteId).join(' ');
+      return `${k}="${esc(value)}"`;
     }).join(' ');
     const children = n.children.map((c) => serialize(c, inStyle || n.tag === 'style')).join('');
-    return `<${n.tag}${attrs ? ` ${attrs}` : ''}>${children}</${n.tag}>`;
+    return `<${n.tag}${attrs ? ' ' + attrs : ''}>${children}</${n.tag}>`;
   };
   return doc.children.map((n) => serialize(n)).join('');
 }

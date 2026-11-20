@@ -5,7 +5,7 @@ import { EditorPane, type PaneOptions } from './editor-pane';
 export class EditModal extends Modal {
   private pane?: EditorPane;
   private dirty = false;
-  constructor(private o: Omit<PaneOptions, 'onChange'> & { title: string; text: string; save(value: string): Promise<void> | void }) { super(o.app); }
+  constructor(private readonly o: Omit<PaneOptions, 'onChange'> & { title: string; text: string; save(value: string): Promise<void> | void }) { super(o.app); }
 
   onOpen() {
     this.modalEl.addClass('mod-fm-edit');

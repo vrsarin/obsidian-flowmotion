@@ -24,7 +24,7 @@ export function layoutFixed(d: Diagram): Layout {
   const edges: LaidEdge[] = d.flows.map((f) => {
     const a = fx.nodes[f.from]!, b = fx.nodes[f.to]!;
     const via = fx.routes[f.id] ?? [];
-    const first = via[0] ?? { x: b.x + b.w / 2, y: b.y + b.h / 2 }, last = via[via.length - 1] ?? { x: a.x + a.w / 2, y: a.y + a.h / 2 };
+    const first = via[0] ?? { x: b.x + b.w / 2, y: b.y + b.h / 2 }, last = via.at(-1) ?? { x: a.x + a.w / 2, y: a.y + a.h / 2 };
     let mid: Pt[] = via;
     // No waypoints and not aligned: one elbow pair, so lines stay orthogonal like draw.io's default connectors.
     if (!via.length) {
@@ -35,7 +35,7 @@ export function layoutFixed(d: Diagram): Layout {
         mid = Math.abs(bc.x - ac.x) >= Math.abs(bc.y - ac.y) ? [{ x: mx, y: ac.y }, { x: mx, y: bc.y }] : [{ x: ac.x, y: my }, { x: bc.x, y: my }];
       }
     }
-    const start = exit(a, mid[0] ?? first), end = exit(b, mid[mid.length - 1] ?? last);
+    const start = exit(a, mid[0] ?? first), end = exit(b, mid.at(-1) ?? last);
     const path = makePath([start, ...mid, end], { curve: f.curve, horizontal: true });
     const at = d.edgeLabels && f.payload && path.points.length ? pointAt(path, 0.5) : undefined;
     return { id: f.id, from: f.from, to: f.to, path, ...(at && { label: { text: f.payload!, x: at.x, y: at.y - 6 } }), ...(f.line && { line: f.line }), ...(f.head && { head: f.head }), ...(f.tail && { tail: f.tail }), ...(f.style && { style: f.style }) };

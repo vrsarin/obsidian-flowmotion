@@ -1,15 +1,14 @@
 import { Platform, TextFileView, type WorkspaceLeaf } from "obsidian";
-import { FLOW_TEMPLATE } from "../core/template";
 import { DrawioPane, isDrawioName } from "./drawio-pane";
 import { EditorPane, type PaneOptions } from "./editor-pane";
 
-export { FLOW_TEMPLATE };
+export { FLOW_TEMPLATE } from "../core/template";
 export const FLOW_VIEW = "flowmotion-flow";
 export const FLOW_EXT = "flow";
 
 /** Editor for `.flow` files (YAML or JSON diagram definitions): CodeMirror by default, with a live preview. */
 export class FlowView extends TextFileView {
-  private pane: EditorPane;
+  private readonly pane: EditorPane;
   /** `.drawio.flow` files open the draw.io editor instead of the code editor. */
   private drawio?: DrawioPane;
   private drawioFile?: string;
@@ -17,7 +16,7 @@ export class FlowView extends TextFileView {
   private notice?: HTMLElement;
   constructor(
     leaf: WorkspaceLeaf,
-    private opts: Omit<PaneOptions, "onChange" | "notePath"> & {
+    private readonly opts: Omit<PaneOptions, "onChange" | "notePath"> & {
       pluginDir: string;
       server: { url(): Promise<string> };
       drawio: boolean;
@@ -90,8 +89,7 @@ export class FlowView extends TextFileView {
       }
       this.notice?.remove();
       this.notice = undefined;
-      if (!this.drawio) {
-        this.drawio = new DrawioPane(this.contentEl, {
+      this.drawio ??= new DrawioPane(this.contentEl, {
           app: this.opts.app,
           pluginDir: this.opts.pluginDir,
           server: this.opts.server,
@@ -102,7 +100,6 @@ export class FlowView extends TextFileView {
           },
           onExit: () => this.leaf.detach(),
         });
-      }
       this.drawio.set(data);
       return;
     }

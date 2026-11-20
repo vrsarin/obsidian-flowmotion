@@ -79,10 +79,11 @@ function registerProviders() {
         }));
         if (!text.trim()) snippets.push({
           label: 'flowmotion diagram', kind: K.Snippet, detail: 'starter diagram', sortText: '0', range,
-          insertText: FLOW_TEMPLATE.replace(/[$}\\]/g, '\\$&'), insertTextRules: L.CompletionItemInsertTextRule.InsertAsSnippet,
+          insertText: FLOW_TEMPLATE.replace(/[$}\\]/g, String.raw`\$&`), insertTextRules: L.CompletionItemInsertTextRule.InsertAsSnippet,
         });
+        const kinds: Record<string, monaco.languages.CompletionItemKind> = { property: K.Property, enum: K.EnumMember };
         const items = (r?.suggestions ?? []).map((x, i) => ({
-          label: x.label, kind: x.type === 'property' ? K.Property : x.type === 'enum' ? K.EnumMember : K.Reference,
+          label: x.label, kind: kinds[x.type] ?? K.Reference,
           insertText: x.insert, detail: x.detail, documentation: x.info, range, sortText: `1${String(i).padStart(3, '0')}`,
         }));
         return { suggestions: [...snippets, ...items] };
@@ -93,9 +94,13 @@ function registerProviders() {
         const text = model.getValue();
         const d = docsAt(text, model.getOffsetAt(position));
         if (!d) return null;
-        const lines = [`**${d.title}**${d.type ? `  \`${d.type}\`` : ''}`];
+        const type = d.type ? `  \`${d.type}\`` : '';
+        const lines = [`**${d.title}**${type}`];
         if (d.description) lines.push(d.description);
-        if (d.values) lines.push(`One of: ${d.values.map((v) => `\`${v}\``).join(' · ')}`);
+        if (d.values) {
+          const values = d.values.map((v) => `\`${v}\``).join(' · ');
+          lines.push(`One of: ${values}`);
+        }
         return { range: rangeAt(model, d.from, d.to), contents: [{ value: lines.join('\n\n') }] };
       },
     }),
