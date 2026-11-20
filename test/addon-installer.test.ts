@@ -11,7 +11,7 @@ const downloaded = vi.hoisted(() => ({
   body: new Uint8Array(Buffer.from("archive")),
 }));
 
-vi.mock("https", () => ({
+vi.mock("node:https", () => ({
   get: (
     _url: string,
     _options: object,

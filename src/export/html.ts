@@ -1,8 +1,8 @@
 import { renderSvg } from '../render/svg';
 import type { Model } from '../render/model';
-import type { ThemeName } from '../render/theme';
+import type { Theme, ThemeName } from '../render/theme';
 
-export function animatedSvg(m: Model, theme: 'light' | 'dark' = 'light'): string {
+export function animatedSvg(m: Model, theme: 'light' | 'dark' | Theme = 'light'): string {
   return renderSvg(m, { idPrefix: `fm-${m.id}`.replace(/[^A-Za-z0-9_-]/g, '-'), theme, smil: true });
 }
 /** One still frame. Defaults to the idle state (before anything runs), which reads as a plain diagram. */
@@ -12,7 +12,7 @@ export function staticSvg(m: Model, theme: 'light' | 'dark' = 'light', at = -1):
 
 /** Self-contained HTML: pre-laid-out model + runtime bundle + CSS. No network, no ELK. */
 export function standaloneHtml(models: Model[], runtimeJs: string, css: string, title = 'FlowMotion', theme: ThemeName = 'light'): string {
-  const json = JSON.stringify(models).replace(/</g, '\\u003c');
+  const json = JSON.stringify(models).replaceAll('<', String.raw`\u003c`);
   const sections = models.map((m, i) => `<section><h2>${m.id}</h2><div class="fm-slot" data-i="${i}"></div></section>`).join('');
   const dark = theme === 'dark';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

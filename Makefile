@@ -14,7 +14,7 @@ VAULT ?= /Users/viveksarin/Documents/Obsidian Vault
 
 .PHONY: help build test lint release-check release-build \
 	act-install act-secrets ci-list ci-dry-run ci-lint ci-release-build ci-release-dryrun ci-all \
-	install-plugin
+	install-plugin security security-semgrep security-snyk security-sonar security-aikido security-summary security-clean
 
 help:
 	@echo "Build and check"
@@ -25,6 +25,14 @@ help:
 	@echo "  make release-build      Install dependencies and build the plugin"
 	@echo "  make release-check      Check the version and plugin files are ready to publish (TAG=0.1.0)"
 	@echo "  make install-plugin     Copy the plugin into VAULT=\"/path/to/vault\""
+	@echo ""
+	@echo "Local security scans (tokens in .security.env: SNYK_TOKEN, SONAR_TOKEN, AIKIDO_API_KEY)"
+	@echo "  make security           Run all scanners, then print a findings summary"
+	@echo "  make security-semgrep   Semgrep only (no account needed)"
+	@echo "  make security-snyk      Snyk dependencies and code"
+	@echo "  make security-sonar     SonarCloud analysis on branch SONAR_BRANCH=local-scan"
+	@echo "  make security-aikido    Aikido local scanner"
+	@echo "  make security-summary   Re-print the summary of the last run"
 	@echo ""
 	@echo "Local CI via gh act (requires: gh cli + Docker Desktop)"
 	@echo "  make act-install        Install the gh-act extension (one-time)"
@@ -46,7 +54,7 @@ build:
 	$(NPM) run build
 
 test:
-	$(NPM) test
+	$(NPM) run test:coverage
 
 test-e2e:
 	$(NPM) run test:e2e
@@ -101,3 +109,25 @@ ci-release-dryrun:
 	gh act push -n -W $(RELEASE_WF) -j build $(ACT_FLAGS)
 
 ci-all: ci-lint ci-release-build
+
+# ── Local security scans ──────────────────────────────────────────────────────
+# Reports land in .security/ (gitignored). A scanner without its token is skipped.
+# `make security` runs every scanner, prints the summary, and fails if any scan failed.
+
+SECURITY_TOOLS := semgrep snyk sonar
+
+security:
+	@rc=0; rm -f .security/*.sarif .security/*.skipped .security/sonar-issues.json; \
+	for t in $(SECURITY_TOOLS); do \
+	  echo "── $$t"; scripts/security-scan.sh $$t || { echo "$$t: findings or scan error"; rc=1; }; \
+	done; \
+	node scripts/security-summary.mjs; exit $$rc
+
+security-semgrep security-snyk security-sonar security-aikido: security-%:
+	@scripts/security-scan.sh $*; rc=$$?; node scripts/security-summary.mjs; exit $$rc
+
+security-summary:
+	@node scripts/security-summary.mjs
+
+security-clean:
+	rm -rf .security

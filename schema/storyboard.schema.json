@@ -173,6 +173,15 @@
             "type": "boolean",
             "description": "arrow: draw faintly."
           },
+          "line": {
+            "type": "string",
+            "enum": [
+              "solid",
+              "dotted",
+              "thick"
+            ],
+            "description": "arrow: connector line style."
+          },
           "route": {
             "type": "string",
             "description": "Accepted for compatibility; currently ignored."
@@ -201,6 +210,208 @@
             "description": "Accepted for compatibility; currently ignored.",
             "maxLength": 500
           },
+          "presentation": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "defaults": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "nodes": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "visible": {
+                        "type": "boolean",
+                        "description": "Show this element."
+                      },
+                      "opacity": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1,
+                        "description": "Element opacity."
+                      },
+                      "fill": {
+                        "type": "string",
+                        "description": "Fill color."
+                      },
+                      "stroke": {
+                        "type": "string",
+                        "description": "Outline color."
+                      },
+                      "highlight": {
+                        "type": "boolean",
+                        "description": "Allow beat highlighting."
+                      }
+                    }
+                  },
+                  "groups": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "visible": {
+                        "type": "boolean",
+                        "description": "Show this element."
+                      },
+                      "opacity": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1,
+                        "description": "Element opacity."
+                      },
+                      "fill": {
+                        "type": "string",
+                        "description": "Fill color."
+                      },
+                      "stroke": {
+                        "type": "string",
+                        "description": "Outline color."
+                      }
+                    }
+                  },
+                  "arrows": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "visible": {
+                        "type": "boolean",
+                        "description": "Show this element."
+                      },
+                      "opacity": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1,
+                        "description": "Element opacity."
+                      },
+                      "color": {
+                        "type": "string",
+                        "description": "Connector and arrowhead color."
+                      },
+                      "arrowheads": {
+                        "type": "string",
+                        "enum": [
+                          "start",
+                          "end",
+                          "both",
+                          "none"
+                        ]
+                      },
+                      "packet": {
+                        "type": "boolean",
+                        "description": "Show moving packets independently of the connector."
+                      },
+                      "highlight": {
+                        "type": "boolean",
+                        "description": "Allow active connector highlighting."
+                      }
+                    }
+                  }
+                }
+              },
+              "nodes": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "visible": {
+                      "type": "boolean",
+                      "description": "Show this element."
+                    },
+                    "opacity": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1,
+                      "description": "Element opacity."
+                    },
+                    "fill": {
+                      "type": "string",
+                      "description": "Fill color."
+                    },
+                    "stroke": {
+                      "type": "string",
+                      "description": "Outline color."
+                    },
+                    "highlight": {
+                      "type": "boolean",
+                      "description": "Allow beat highlighting."
+                    }
+                  }
+                },
+                "x-key-ref": "element"
+              },
+              "groups": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "visible": {
+                      "type": "boolean",
+                      "description": "Show this element."
+                    },
+                    "opacity": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1,
+                      "description": "Element opacity."
+                    },
+                    "fill": {
+                      "type": "string",
+                      "description": "Fill color."
+                    },
+                    "stroke": {
+                      "type": "string",
+                      "description": "Outline color."
+                    }
+                  }
+                },
+                "x-key-ref": "element"
+              },
+              "arrows": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "visible": {
+                      "type": "boolean",
+                      "description": "Show this element."
+                    },
+                    "opacity": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1,
+                      "description": "Element opacity."
+                    },
+                    "color": {
+                      "type": "string",
+                      "description": "Connector and arrowhead color."
+                    },
+                    "arrowheads": {
+                      "type": "string",
+                      "enum": [
+                        "start",
+                        "end",
+                        "both",
+                        "none"
+                      ]
+                    },
+                    "packet": {
+                      "type": "boolean",
+                      "description": "Show moving packets independently of the connector."
+                    },
+                    "highlight": {
+                      "type": "boolean",
+                      "description": "Allow active connector highlighting."
+                    }
+                  }
+                },
+                "x-key-ref": "element"
+              }
+            }
+          },
           "beats": {
             "type": "array",
             "minItems": 1,
@@ -224,7 +435,10 @@
                   "description": "Arrows to animate (ids, or {edge, data, back}).",
                   "anyOf": [
                     {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Arrow id.",
+                      "pattern": "^[A-Za-z0-9_.>-]{1,64}$",
+                      "x-ref": "element"
                     },
                     {
                       "type": "object",
@@ -255,7 +469,10 @@
                       "items": {
                         "anyOf": [
                           {
-                            "type": "string"
+                            "type": "string",
+                            "description": "Arrow id.",
+                            "pattern": "^[A-Za-z0-9_.>-]{1,64}$",
+                            "x-ref": "element"
                           },
                           {
                             "type": "object",
@@ -289,6 +506,7 @@
                 "show": {
                   "type": "object",
                   "description": "Map of card id → rows to reveal.",
+                  "x-key-ref": "element",
                   "additionalProperties": {
                     "type": "array",
                     "maxItems": 20,
@@ -397,6 +615,11 @@
     "controls": {
       "type": "boolean",
       "description": "Show the playback control bar from the start."
+    },
+    "interactive": {
+      "type": "boolean",
+      "description": "Wait for a button press to play each storyboard beat or event interval.",
+      "default": false
     },
     "controlsPosition": {
       "type": "string",

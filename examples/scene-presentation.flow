@@ -1,0 +1,78 @@
+title: Scene presentation
+speed: 2500
+header: true
+footer: true
+elements:
+  - id: client
+    type: rectangle
+    content: [{ type: title, text: Client }]
+  - id: api
+    type: rectangle
+    content: [{ type: title, text: API }]
+  - id: database
+    type: cylinder
+    content: [{ type: title, text: Database }]
+  - id: system
+    type: group
+    label: { title: Request flow }
+    children: [client, api, database]
+    layout: { direction: row, gap: 80 }
+  - id: request
+    type: arrow
+    start: { id: client }
+    end: { id: api }
+    label: { text: Request / response }
+  - id: query
+    type: arrow
+    start: { id: api }
+    end: { id: database }
+    label: { text: Query }
+scenes:
+  - label: Focus on the request
+    presentation:
+      defaults:
+        nodes: { opacity: 0.3, highlight: false }
+        arrows: { opacity: 0.3, packet: false, highlight: false }
+      nodes:
+        client: { opacity: 1, fill: '#e8f4ff', stroke: '#2f6fed', highlight: true }
+        api: { opacity: 1, highlight: true }
+      arrows:
+        request: { opacity: 1, arrowheads: both, packet: true, highlight: true }
+    beats:
+      - say: The request travels forward; the database stays dim.
+        edges: [{ edge: request, data: request }]
+        light: [client]
+        show:
+          client:
+            - { text: Request sent, tone: blue }
+      - say: The response travels backward; both arrowheads remain visible.
+        edges: [{ edge: request, data: response, back: true }]
+  - label: Focus on the database
+    presentation:
+      defaults:
+        nodes: { opacity: 0.3 }
+        arrows: { visible: false, packet: false }
+      nodes:
+        api: { opacity: 1 }
+        database: { opacity: 1, fill: '#e2f5e6', stroke: '#32814a' }
+      arrows:
+        query: { visible: true, opacity: 1, arrowheads: end, packet: true }
+    beats:
+      - say: Only the database connector and its packet are shown.
+        edges: [{ edge: query, data: query }]
+        light: [database]
+  - label: Empty canvas
+    presentation:
+      defaults:
+        nodes: { visible: false }
+        groups: { visible: false }
+        arrows: { visible: false, packet: false }
+      arrows:
+        request: { arrowheads: none }
+    beats:
+      - say: The diagram elements are hidden while the timeline continues.
+        edges: [request]
+  - label: Original appearance
+    beats:
+      - say: A scene without overrides uses the original appearance.
+        edges: [{ edge: request, data: response, back: true }]

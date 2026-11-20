@@ -1,6 +1,7 @@
 .DS_Store
 node_modules/
 dist/
+coverage/
 out/
 .cache/
 ## Ignore Visual Studio temporary files, build results, and
@@ -434,3 +435,10 @@ docs/
 
 # wdio-obsidian-service
 .obsidian-cache/
+
+# Local security scan output and tokens
+.security/
+.security.env
+
+.scannerwork/
+.sonarlint/

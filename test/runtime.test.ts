@@ -38,6 +38,29 @@ describe('browser runtime', () => {
     mounted.destroy();
   });
 
+  it('synchronizes playback controls while playing, paused, and seeking', async () => {
+    const model = await buildModel('nodes: [{ id: a }]\nevents: [{ id: work, type: process, node: a, duration: 1000 }]');
+    const container = document.createElement('div');
+    const request = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1);
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+    try {
+      const mounted = mountModel(container, model, { autoplay: false });
+      const play = container.querySelector<HTMLButtonElement>('button[aria-label="Play"]')!;
+      const scrub = container.querySelector<HTMLInputElement>('input[aria-label="Timeline"]')!;
+      const time = container.querySelector<HTMLElement>('.fm-time')!;
+
+      play.click();
+      expect(play.getAttribute('aria-label')).toBe('Pause');
+      play.click();
+      expect(play.getAttribute('aria-label')).toBe('Play');
+      scrub.value = '250'; scrub.dispatchEvent(new Event('input'));
+      expect(time.textContent).toBe('0.3s');
+      mounted.destroy();
+    } finally {
+      request.mockRestore(); cancel.mockRestore();
+    }
+  });
+
   it('uses the supplied Obsidian element factory when available', async () => {
     const model = await buildModel('nodes: [{ id: a }]');
     const container = document.createElement('div');

@@ -32,7 +32,7 @@ function diagnose(app: App, cache: Map<string, Issue[]>, b: Block): Diag[] {
   const out = [...issues];
   const ref = srcOf(b.text);
   const note = app.workspace.getActiveFile()?.path ?? '';
-  if (ref && ref.path && !fileExists(app, note, ref.path)) out.push({ from: ref.from, to: ref.to, severity: 'error', message: `File not found: ${ref.path}` });
+  if (ref?.path && !fileExists(app, note, ref.path)) out.push({ from: ref.from, to: ref.to, severity: 'error', message: `File not found: ${ref.path}` });
   return out.map((i) => ({ ...i, from: i.from + b.from, to: i.to + b.from }));
 }
 
@@ -106,7 +106,7 @@ function expandSnippet(template: string): { text: string; select?: [number, numb
   let text = '', last = 0, select: [number, number] | undefined;
   for (const m of template.matchAll(/\$\{([^}]*)\}/g)) {
     text += template.slice(last, m.index);
-    if (!select) select = [text.length, text.length + m[1]!.length];
+    select ??= [text.length, text.length + m[1]!.length];
     text += m[1]!;
     last = m.index + m[0].length;
   }
