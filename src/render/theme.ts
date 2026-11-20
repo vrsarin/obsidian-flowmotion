@@ -56,3 +56,32 @@ export const obsidian: Theme = {
 };
 export const themes = { light, dark, obsidian } as const;
 export type ThemeName = keyof typeof themes;
+
+/** Snapshot Obsidian's inherited palette so the SVG can animate without the vault CSS. */
+export function snapshotObsidianTheme(context: HTMLElement): Theme {
+  const doc = context.ownerDocument;
+  const probe = doc.createElement('span');
+  probe.hidden = true;
+  context.appendChild(probe);
+  const resolve = (value: string) => {
+    probe.style.color = value;
+    return doc.defaultView?.getComputedStyle(probe).color || value.replace(/^var\(--[\w-]+, (.*)\)$/, '$1');
+  };
+  try {
+    const color = (key: 'text' | 'edge' | 'muted' | 'packetFill' | 'packetText' | 'bar' | 'halo') => resolve(obsidian[key]);
+    const tone = (key: Tone) => resolve(obsidian.tones[key]);
+    const state = (key: NodeState) => {
+      const { fill, stroke, width } = obsidian.states[key];
+      return { fill: resolve(fill), stroke: resolve(stroke), width };
+    };
+    return {
+      concrete: true, bg: color('halo'), halo: color('halo'), text: color('text'), edge: color('edge'),
+      muted: color('muted'), packetFill: color('packetFill'), packetText: color('packetText'), bar: color('bar'),
+      tones: { gray: tone('gray'), blue: tone('blue'), purple: tone('purple'), green: tone('green'), orange: tone('orange') },
+      states: { idle: state('idle'), receiving: state('receiving'), processing: state('processing'),
+        completed: state('completed'), waiting: state('waiting'), error: state('error') },
+    };
+  } finally {
+    probe.remove();
+  }
+}

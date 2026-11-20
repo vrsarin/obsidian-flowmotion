@@ -52,6 +52,13 @@ class Builder {
   }
 }
 
+function closeScope(s: string, ln: number, scope: string[], b: Builder): boolean {
+  if (s !== '}') return false;
+  if (scope.length) scope.pop();
+  else b.bad(ln, 'Unmatched "}".');
+  return true;
+}
+
 // ---------------------------------------------------------------- activity (PlantUML new syntax)
 
 interface Pending { from: string; text?: string }
@@ -308,7 +315,7 @@ class StateParser {
   }
 
   private statement(s: string, ln: number): boolean {
-    return this.aliased(s) || this.declared(s) || this.closeScope(s, ln)
+    return this.aliased(s) || this.declared(s) || closeScope(s, ln, this.scope, this.b)
       || s === '--' || s === '||' // concurrent regions: drawn as one group
       || this.transition(s, ln) || this.description(s);
   }
@@ -347,13 +354,6 @@ class StateParser {
     if (!m) return false;
     if (m[3]) { this.b.group(m[1]!, m[1]!.replaceAll('_', ' '), this.cur()); this.scope.push(m[1]!); }
     else this.b.node(m[1]!, m[2] ? '' : m[1]!.replaceAll('_', ' '), m[2] ? stereo(m[2]) : 'round', this.cur());
-    return true;
-  }
-
-  private closeScope(s: string, ln: number): boolean {
-    if (s !== '}') return false;
-    if (this.scope.length) this.scope.pop();
-    else this.b.bad(ln, 'Unmatched "}".');
     return true;
   }
 
@@ -410,7 +410,25 @@ function stereo(s: string): Shape {
 // ---------------------------------------------------------------- class diagram
 
 const DECO: Record<string, End> = { '<|': 'triangle', '|>': 'triangle', '*': 'diamond-filled', o: 'diamond' };
-const REL = /^(\w+)\s*(?:"([^"]*)")?\s*((?:<\|?|\*|o|<|\|>|>)?)(-+|\.+)((?:\|>|\*|o|>|<)?)\s*(?:"([^"]*)")?\s*(\w+)\s*(?::\s*(.*))?$/;
+const CLASS_END = /^(?:"([^"]*)"\s*)?(\w+)\s*(?::\s*(.*))?$/;
+function classRelation(s: string) {
+  const start = /^(\w+)\s*/.exec(s);
+  if (!start) return undefined;
+  let rest = s.slice(start[0].length);
+  const fromCard = /^"([^"]*)"\s*/.exec(rest);
+  if (fromCard) rest = rest.slice(fromCard[0].length);
+  const arrow = /^(<\||\|>|[*o<>])?(-+|\.+)(\|>|[*o<>])?/.exec(rest);
+  if (!arrow) return undefined;
+  let right = arrow[3];
+  let end = CLASS_END.exec(rest.slice(arrow[0].length).trimStart());
+  // A lone "o" can be the target identifier rather than an aggregation decoration.
+  if (!end && right === 'o') {
+    end = CLASS_END.exec(rest.slice(arrow[0].length - 1));
+    right = undefined;
+  }
+  if (!end) return undefined;
+  return { a: start[1]!, ca: fromCard?.[1], l: arrow[1], body: arrow[2]!, r: right, cb: end[1], z: end[2]!, label: end[3] };
+}
 const CLASS_SKIP = /^(direction|skinparam|hide|show|title|note|namespace|package|set)\b/i;
 const deco = (tok?: string): End | undefined => (tok ? DECO[tok] ?? 'arrow' : undefined);
 
@@ -448,13 +466,23 @@ class ClassParser {
   }
 
   private declaration(s: string): boolean {
-    const m = /^(?:(abstract|interface|enum)\s+)?class\s+(\w+)(?:\s*<<(\w+)>>)?\s*(\{)?$/i.exec(s) ?? /^(interface|abstract class|abstract|enum)\s+(\w+)\s*(\{)?$/i.exec(s);
+    const qualifier = /^(abstract|interface|enum)\s+/i.exec(s);
+    const rest = qualifier ? s.slice(qualifier[0].length) : s;
+    const m = /^class\s+(\w+)(?:\s*<<(\w+)>>)?\s*(\{)?$/i.exec(rest);
+    if (!m) return this.qualifiedClass(s);
+    const n = this.cls(m[1]!);
+    if (qualifier && !n.label.startsWith('«')) n.label = `«${qualifier[1]!.toLowerCase()}» ${m[1]}`;
+    if (m[2]) n.label = `«${m[2]}» ${m[1]}`;
+    if (m[3]) this.open = n;
+    return true;
+  }
+
+  private qualifiedClass(s: string): boolean {
+    const m = /^(interface|abstract|enum)\s+(\w+)\s*(\{)?$/i.exec(s);
     if (!m) return false;
-    const kind = (m[1] && /interface|enum|abstract/i.test(m[1]) ? m[1] : /^(\S+)/.exec(s)![1]!).replace(/\s*class/i, '').toLowerCase();
     const n = this.cls(m[2]!);
-    if (['interface', 'abstract', 'enum'].includes(kind) && !n.label.startsWith('«')) n.label = `«${kind}» ${m[2]}`;
-    if (/^class$/i.test(m[1] ?? '') === false && m[3] && m.length > 4 && /<</.test(s)) n.label = `«${m[3]}» ${m[2]}`;
-    if (/\{\s*$/.test(s)) this.open = n;
+    if (!n.label.startsWith('«')) n.label = `«${m[1]!.toLowerCase()}» ${m[2]}`;
+    if (m[3]) this.open = n;
     return true;
   }
 
@@ -468,22 +496,22 @@ class ClassParser {
 
   private memberLine(s: string): boolean {
     const m = /^(\w+)\s*:(.+)$/.exec(s);
-    if (!m || /[-.][-.>|*o]/.test(m[2]!.trimStart().slice(0, 2)) || REL.test(s)) return false;
+    if (!m || /[-.][-.>|*o]/.test(m[2]!.trimStart().slice(0, 2)) || classRelation(s)) return false;
     this.member(this.cls(m[1]!), m[2]!);
     return true;
   }
 
   private relation(s: string): boolean {
-    const m = /^(\w+)\s*(?:"([^"]*)"\s*)?(<\||\*|o|<|\|>|>)?(--|\.\.)(\|>|\*|o|>|<)?\s*(?:"([^"]*)"\s*)?(\w+)\s*(?::\s*(.*))?$/.exec(s);
-    if (!m) return false;
-    const [, a, ca, l, body, r, cb, z, label] = m;
-    this.cls(a!); this.cls(z!);
+    const m = classRelation(s);
+    if (!m || (m.body !== '--' && m.body !== '..')) return false;
+    const { a, ca, l, body, r, cb, z, label } = m;
+    this.cls(a); this.cls(z);
     // Arrow points at the end that carries the decoration. Left decoration => reverse so the head lands on `a`.
     const left = deco(l), right = deco(r);
     const text = label ? clean(label.replace(/^[<>]\s*/, '').replace(/[<>]$/, '').trimEnd()) : undefined;
     const line = body === '..' ? 'dotted' : undefined;
-    if (left && !right) this.b.link(z!, a!, { text, line, head: left, headLabel: ca, tailLabel: cb });
-    else this.b.link(a!, z!, { text, line, head: right ?? 'none', tail: left, headLabel: cb, tailLabel: ca });
+    if (left && !right) this.b.link(z, a, { text, line, head: left, headLabel: ca, tailLabel: cb });
+    else this.b.link(a, z, { text, line, head: right ?? 'none', tail: left, headLabel: cb, tailLabel: ca });
     return true;
   }
 
@@ -519,9 +547,17 @@ class ErParser {
 
   private attribute(s: string, ln: number) {
     if (s === '}') { this.open = undefined; return; }
-    const a = /^(\S+)\s+(\S+)\s*(PK|FK|UK)?(?:\s*,\s*(PK|FK|UK))?\s*(?:"([^"]*)")?\s*$/i.exec(s);
+    const a = /^(\S+)\s+(\S+)(.*)$/.exec(s);
     if (!a) { this.b.bad(ln, `Attribute "${s}" should look like "type name PK".`); return; }
-    const keys = [a[3], a[4]].filter(Boolean).map((k) => k!.toUpperCase()).join(',');
+    const suffix = a[3]!.trim();
+    const quote = suffix.indexOf('"');
+    const comment = quote < 0 ? '' : suffix.slice(quote);
+    const keysText = (quote < 0 ? suffix : suffix.slice(0, quote)).trim();
+    const k = /^(PK|FK|UK)?(?:\s*,\s*(PK|FK|UK))?$/i.exec(keysText);
+    if (!k || !/^(?:"[^"]*")?$/.test(comment)) {
+      this.b.bad(ln, `Attribute "${s}" should look like "type name PK".`); return;
+    }
+    const keys = [k[1], k[2]].filter(Boolean).map((key) => key!.toUpperCase()).join(',');
     this.open!.lines!.push(`${keys ? keys + ' ' : ''}${a[2]}: ${a[1]}`);
   }
 
@@ -543,7 +579,7 @@ class ErParser {
 
   /** Mermaid and PlantUML share one relation syntax: A ||--o{ B : label */
   private relation(s: string): boolean {
-    const m = /^(\w+)\s+([|}o][|o{}])\s*(--|\.\.)\s*([|o{}][|o{}])\s+(\w+)(?:\s*:(.*))?$/.exec(s);
+    const m = /^(\w+)\s+([|}o][|o{}])\s*(--|\.\.)\s*([|o{}]{2})\s+(\w+)(?:\s*:(.*))?$/.exec(s);
     if (!m) return false;
     const [, a, l, body, r, z, label] = m;
     this.ent(a!); this.ent(z!);
@@ -684,7 +720,7 @@ class GanttParser {
     return id;
   }
 
-  private task = (key: string, label: string): TaskSpec => {
+  private readonly task = (key: string, label: string): TaskSpec => {
     let t = this.byKey.get(key);
     if (!t) {
       t = { id: slug(key), label, section: this.section };
@@ -929,7 +965,7 @@ class ComponentParser {
     const { lines, b } = this;
     for (const [s, ln] of lines) {
       if (!s || s.startsWith("'") || s.startsWith('%%') || COMPONENT_SKIP.test(s)) continue;
-      if (this.closeScope(s, ln)) continue;
+      if (closeScope(s, ln, this.scope, b)) continue;
       const handled = this.mermaid ? this.architecture(s, ln) : this.plantStatement(s, ln);
       if (!handled) b.bad(ln, this.mermaid
         ? `Unrecognised architecture statement "${s.slice(0, 40)}". Use "group", "service id(icon)[Label] in group", "a:R -- L:b".`
@@ -939,13 +975,6 @@ class ComponentParser {
   }
 
   private cur() { return this.scope.at(-1); }
-
-  private closeScope(s: string, ln: number): boolean {
-    if (s !== '}') return false;
-    if (this.scope.length) this.scope.pop();
-    else this.b.bad(ln, 'Unmatched "}".');
-    return true;
-  }
 
   private endpoint(raw: string, ln: number): string {
     const { b } = this;
@@ -1004,16 +1033,19 @@ class ComponentParser {
   }
 
   private declaration(s: string): boolean {
-    const m = /^(\w+)\s+("[^"]*"|\[[^\]]+\]|[^\s{]+)((?:[\s{].*)?)$/.exec(s);
+    const m = /^(\w+)\s+/.exec(s);
     if (!m || !PLANT_KEYWORDS.test(m[1]!)) return false;
-    const tail = /^(?:as\s+("[^"]*"|[^\s{"][^\s{]*))?\s*(\{)?$/.exec(m[3]!.replace(/<<[^>]*>>/, '').trim());
+    const rest = s.slice(m[0].length);
+    const a = declarationName(rest);
+    if (!a) return false;
+    const tail = /^(?:as\s+("[^"]*"|[^\s{"][^\s{]*))?\s*(\{)?$/.exec(rest.slice(a.length).replace(/<<[^>]*>>/, '').trim());
     if (!tail) return false;
-    const [, kw, a] = m;
+    const kw = m[1]!;
     const [, bAs, open] = tail;
-    const raw = a!.replace(/^\[|\]$/g, ''), label = clean(raw);
+    const raw = a.replace(/^\[|\]$/g, ''), label = clean(raw);
     const id = bAs ? slug(bAs) : slug(raw);
-    if (open && CONTAINERS.test(kw!)) { this.b.group(id, label, this.cur()); this.scope.push(id); }
-    else this.b.node(id, label, SHAPE_FOR[kw!.toLowerCase()], this.cur());
+    if (open && CONTAINERS.test(kw)) { this.b.group(id, label, this.cur()); this.scope.push(id); }
+    else this.b.node(id, label, SHAPE_FOR[kw.toLowerCase()], this.cur());
     return true;
   }
 
@@ -1046,6 +1078,15 @@ class ComponentParser {
   }
 }
 
+function declarationName(s: string): string | undefined {
+  const end = s.startsWith('"') ? '"' : ']';
+  if (s.startsWith('"') || s.startsWith('[')) {
+    const at = s.indexOf(end, 1);
+    if (at >= (end === ']' ? 2 : 1)) return s.slice(0, at + 1);
+  }
+  return /^[^\s{]+/.exec(s)?.[0];
+}
+
 function component(lines: [string, number][], b: Builder, mermaid: boolean) {
   new ComponentParser(lines, b, mermaid).run();
 }
@@ -1072,7 +1113,9 @@ function sniffUml(rows: string[]): Kind | undefined {
   if (has(/^(Person|System|Container|Component|Enterprise)(Db|Queue)?(_Ext)?\(|^!include\s.*C4/i)) return 'c4';
   if (has(/(?:^state\b)|(?:\[\*\])/)) return 'state';
   if (has(/^(class|interface|abstract|enum)\s+\w+/i)) return 'class';
-  if (has(/^(component|node|cloud|package|rectangle|folder|frame|database|storage|artifact|queue|usecase)\s+\S+|^\[[^\]]+\]\s*(?:<?[-.]+|as\b)/i) && !has(/^participant\b/i)) return 'component';
+  const declaredComponent = has(/^(component|node|cloud|package|rectangle|folder|frame|database|storage|artifact|queue|usecase)\s+\S+/i);
+  const linkedComponent = has(/^\[[^\]]+\]\s*(?:<?[-.]+|as\b)/i);
+  if ((declaredComponent || linkedComponent) && !has(/^participant\b/i)) return 'component';
   if (has(/^entity\b/i) && has(/[|}o][|o{}]--[|o{}][|o{}]/)) return 'er';
   if (body.some((r) => r.startsWith(':')) && !has(/^\w+\s*-+>/)) return 'activity';
   return undefined;
@@ -1090,9 +1133,9 @@ export function sniffKind(source: string): Kind | undefined {
 
 const DIRS: Record<string, Diagram['direction']> = { LR: 'LR', RL: 'RL', TB: 'TB', TD: 'TB', BT: 'BT' };
 
-export function parseKind(kind: Kind, source: string, problems: TextProblem[], directives: { line: number; text: string }[]): Diagram {
-  const b = new Builder(problems);
-  let ganttDef: GanttDef | undefined;
+type Directive = { line: number; text: string };
+
+function kindBody(kind: Kind, source: string, directives: Directive[]) {
   const all = source.split(/\r?\n/);
   let direction: Diagram['direction'] = kind === 'mindmap' || kind === 'gantt' || (kind === 'component' && /^\s*architecture/i.test(source)) ? 'LR' : 'TB';
   const plant = all.some((r) => /^\s*@start/i.test(r));
@@ -1121,26 +1164,55 @@ export function parseKind(kind: Kind, source: string, problems: TextProblem[], d
     if (/^left to right direction/i.test(s)) { direction = 'LR'; return; }
     if (kind === 'mindmap') body.push([raw, ln]); else if (s) body.push([s, ln]);
   });
-  if (kind === 'activity') activity(body, b);
-  else if (kind === 'state') state(body, b);
-  else if (kind === 'class') classes(body, b);
-  else if (kind === 'er') er(body, b);
-  else if (kind === 'gantt') ganttDef = gantt(body, b, plant);
-  else if (kind === 'c4') c4(body, b);
-  else if (kind === 'component') component(body, b, /^\s*architecture/i.test(source));
-  else mindmap(body, b, plant);
+  return { body, direction, plant };
+}
 
+function kindDirectives(directives: Directive[], b: Builder) {
   const duration = new Map<string, number>(), fail = new Set<string>();
   const anim = { speed: 1, loop: true, autoplay: true };
   for (const d of directives) {
     const [cmd, a, c] = d.text.split(/\s+/);
-    if (cmd === 'speed') { const v = Number(a); if (v >= 0.1 && v <= 10) anim.speed = v; else b.bad(d.line, '@speed must be between 0.1 and 10.'); }
-    else if (cmd === 'loop') anim.loop = a !== 'off' && a !== 'false';
-    else if (cmd === 'autoplay') anim.autoplay = a !== 'off' && a !== 'false';
-    else if (cmd === 'duration') { const ms = Number(c); if (a && b.nodes.has(a) && ms >= 0 && ms <= LIMITS.duration) duration.set(a, ms); else b.bad(d.line, `@duration: unknown node or bad milliseconds.`); }
-    else if (cmd === 'fail') { if (a && b.nodes.has(a)) fail.add(a); else b.bad(d.line, `@fail: unknown node "${a ?? ''}".`); }
-    else b.bad(d.line, `Unknown directive "@${cmd}".`);
+    switch (cmd) {
+      case 'speed': {
+        const v = Number(a);
+        if (v >= 0.1 && v <= 10) anim.speed = v;
+        else b.bad(d.line, '@speed must be between 0.1 and 10.');
+        break;
+      }
+      case 'loop': anim.loop = a !== 'off' && a !== 'false'; break;
+      case 'autoplay': anim.autoplay = a !== 'off' && a !== 'false'; break;
+      case 'duration': setKindDuration(a, c, d.line, b, duration); break;
+      case 'fail':
+        if (a && b.nodes.has(a)) fail.add(a);
+        else b.bad(d.line, `@fail: unknown node "${a ?? ''}".`);
+        break;
+      default: b.bad(d.line, `Unknown directive "@${cmd}".`);
+    }
   }
+  return { anim, duration, fail };
+}
+
+function setKindDuration(id: string | undefined, value: string | undefined, ln: number, b: Builder, duration: Map<string, number>) {
+  const ms = Number(value);
+  if (id && b.nodes.has(id) && ms >= 0 && ms <= LIMITS.duration) duration.set(id, ms);
+  else b.bad(ln, '@duration: unknown node or bad milliseconds.');
+}
+
+export function parseKind(kind: Kind, source: string, problems: TextProblem[], directives: Directive[]): Diagram {
+  const b = new Builder(problems);
+  const { body, direction, plant } = kindBody(kind, source, directives);
+  let ganttDef: GanttDef | undefined;
+  switch (kind) {
+    case 'activity': activity(body, b); break;
+    case 'state': state(body, b); break;
+    case 'class': classes(body, b); break;
+    case 'er': er(body, b); break;
+    case 'gantt': ganttDef = gantt(body, b, plant); break;
+    case 'c4': c4(body, b); break;
+    case 'component': component(body, b, /^\s*architecture/i.test(source)); break;
+    case 'mindmap': mindmap(body, b, plant); break;
+  }
+  const { anim, duration, fail } = kindDirectives(directives, b);
   // Structure diagrams (class, ER) are static by default; flow-like kinds animate.
   const animate = kind !== 'class' && kind !== 'er';
   const d = b.finish(direction, animate, anim, duration, fail);

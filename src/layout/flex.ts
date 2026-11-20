@@ -6,14 +6,30 @@ import type { LaidEdge, LaidGroup, LaidNode, Layout } from './types';
 export const OX = 28, OY = 40, CAP_H = 78;
 interface R { x: number; y: number; w: number; h: number }
 
+function storyRows(sb: Storyboard): Map<string, RowSpec[][]> {
+  const rowsets = new Map<string, RowSpec[][]>();
+  for (const sc of sb.scenes) for (const b of sc.beats) for (const [n, rows] of Object.entries(b.show)) (rowsets.get(n) ?? rowsets.set(n, []).get(n)!).push(rows);
+  return rowsets;
+}
+
+function storyEdge(e: StoryElement, rect: Map<string, R>): LaidEdge {
+  const a = rect.get(e.start!)!, b = rect.get(e.end!)!;
+  const dx = b.x + b.w / 2 - (a.x + a.w / 2), dy = b.y + b.h / 2 - (a.y + a.h / 2);
+  const horizontal = Math.abs(dx) > Math.abs(dy) * 0.8;
+  const p1 = horizontal ? { x: dx >= 0 ? a.x + a.w : a.x, y: a.y + a.h / 2 } : { x: a.x + a.w / 2, y: dy >= 0 ? a.y + a.h : a.y };
+  const p2 = horizontal ? { x: dx >= 0 ? b.x : b.x + b.w, y: b.y + b.h / 2 } : { x: b.x + b.w / 2, y: dy >= 0 ? b.y : b.y + b.h };
+  const path = makePath([p1, p2], { curve: true, horizontal });
+  const mid = pointAt(path, 0.5);
+  return { id: e.id, from: e.start!, to: e.end!, path, quiet: e.quiet, line: e.line, label: e.label ? { text: e.label, x: mid.x, y: mid.y - 8 } : undefined };
+}
+
 /** Flexbox-like layout for nested groups (row/column, gap, align) with cards sized to their largest content. */
 export function layoutStory(sb: Storyboard): Layout {
   const els = new Map(sb.elements.map((e) => [e.id, e]));
   const parents = new Set(sb.elements.flatMap((e) => e.children ?? []));
   const root = sb.elements.find((e) => e.type !== 'arrow' && !parents.has(e.id))!;
 
-  const rowsets = new Map<string, RowSpec[][]>();
-  for (const sc of sb.scenes) for (const b of sc.beats) for (const [n, rows] of Object.entries(b.show)) (rowsets.get(n) ?? rowsets.set(n, []).get(n)!).push(rows);
+  const rowsets = storyRows(sb);
 
   const isCard = (e: StoryElement) => e.type === 'rectangle' || e.type === 'cylinder';
   const pad = (e: StoryElement) => (e.groupLabel ? 14 : 0);
@@ -79,18 +95,7 @@ export function layoutStory(sb: Storyboard): Layout {
     else if (e.type === 'group' && e.groupLabel) groups.push({ id: e.id, label: e.groupLabel, ...r });
   }
 
-  const edges: LaidEdge[] = [];
-  for (const e of sb.elements) {
-    if (e.type !== 'arrow') continue;
-    const a = rect.get(e.start!)!, b = rect.get(e.end!)!;
-    const dx = b.x + b.w / 2 - (a.x + a.w / 2), dy = b.y + b.h / 2 - (a.y + a.h / 2);
-    const horizontal = Math.abs(dx) > Math.abs(dy) * 0.8;
-    const p1 = horizontal ? { x: dx >= 0 ? a.x + a.w : a.x, y: a.y + a.h / 2 } : { x: a.x + a.w / 2, y: dy >= 0 ? a.y + a.h : a.y };
-    const p2 = horizontal ? { x: dx >= 0 ? b.x : b.x + b.w, y: b.y + b.h / 2 } : { x: b.x + b.w / 2, y: dy >= 0 ? b.y : b.y + b.h };
-    const path = makePath([p1, p2], { curve: true, horizontal });
-    const mid = pointAt(path, 0.5);
-    edges.push({ id: e.id, from: e.start!, to: e.end!, path, quiet: e.quiet, label: e.label ? { text: e.label, x: mid.x, y: mid.y - 8 } : undefined });
-  }
+  const edges = sb.elements.filter((e) => e.type === 'arrow').map((e) => storyEdge(e, rect));
 
   const width = rootR.w + 2 * OX;
   const captionY = rootR.y + rootR.h + 26;

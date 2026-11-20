@@ -46,6 +46,12 @@ describe('state syntax', () => {
 
 describe('class syntax', () => {
   const c = (...l: string[]) => ['classDiagram', ...l].join('\n');
+  it('distinguishes aggregation decorations from a target named o', () => {
+    const d = ok(c('A --o : target', 'A --o B : aggregation', 'A "1" <|.. "many" C : inherits'));
+    expect(d.flows[0]).toMatchObject({ from: 'A', to: 'o', head: 'none', payload: 'target' });
+    expect(d.flows[1]).toMatchObject({ from: 'A', to: 'B', head: 'diamond' });
+    expect(d.flows[2]).toMatchObject({ from: 'C', to: 'A', head: 'triangle', line: 'dotted', headLabel: '1', tailLabel: 'many' });
+  });
   it('parses', () => {
     ok(c('class A {', '<<interface>>', '+x int', '+f() void', '}', 'abstract class B', 'interface I', 'enum E {', 'ONE', '}', 'class C <<service>>', 'class D',
       'A <|-- B', 'A *-- "1" C : owns', 'A o-- "n" D', 'A --> E : uses >', 'I <|.. B', 'A ..> C', 'A -- D', 'A "1" --> "*" B : has', 'A : +id int', 'D : <<x>>', 'namespace N', 'direction LR', 'F {', 'x', '}', 'class G', 'class H {', '+a', '}'));
@@ -55,6 +61,14 @@ describe('class syntax', () => {
 });
 
 describe('er syntax', () => {
+  it('handles optional keys and comments without accepting malformed suffixes', () => {
+    const d = ok('erDiagram\nA {\nint id pk, fk "identity"\nstring name "display name"\nint other , UK\n}');
+    expect(d.nodes[0]!.lines).toEqual(['PK,FK id: int', 'name: string', 'UK other: int']);
+    bad('erDiagram\nA {\nint id PK,NOPE\n}', /line 3.*Attribute/);
+    bad('erDiagram\nA {\nint id PK "unfinished\n}', /Attribute/);
+    bad('erDiagram\nA {\nint id PK "comment" garbage\n}', /Attribute/);
+  });
+
   it('parses', () => {
     ok('erDiagram\nA ||--o{ B : has\nB }|..|{ C : x\nA |o--o| C : y\nA {\nint id PK\nstring n FK,UK "c"\nstring z\n}');
     ok(u('entity "Long" as L {', 'int id PK', '}', 'entity E', 'entity E2 {', '}', 'L ||--o{ E : has', 'E ||--|| E2'));
@@ -103,6 +117,12 @@ describe('c4 syntax', () => {
 });
 
 describe('component syntax', () => {
+  it('keeps quoted and bracketed declaration names with aliases and adjacent braces', () => {
+    const d = ok(u('node "Engine cluster" as Engine{', 'component [Worker A] as Worker <<service>>', '}', 'database DB', 'Worker --> DB'));
+    expect(d.groups[0]).toMatchObject({ id: 'Engine', label: 'Engine cluster' });
+    expect(d.nodes.find((n) => n.id === 'Worker')).toMatchObject({ label: 'Worker A', group: 'Engine' });
+  });
+
   it('parses plantuml component', () => {
     ok(u('component Web', 'component "Long Name" as LN', 'node N {', 'component [In]', 'database DB', '}', 'cloud C', 'queue Q', 'actor A', 'package P {', '}', '[Web] --> [DB] : sql', '[Web] ..> () API', 'LN <-- (UC)', 'A -> N', '[X] as Y', '() "Port" as P1', '[Lone]', 'Web -right-> DB', 'left to right direction', 'skinparam x y', 'note right: n'));
     bad(u('node N {', 'component A'), /never closed/);

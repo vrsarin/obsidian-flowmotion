@@ -31,8 +31,8 @@ export interface PaneOptions {
 /** A CodeMirror editor with a live preview; the optional Monaco add-on replaces it when enabled. */
 export class EditorPane {
   readonly root: HTMLElement;
-  private host: HTMLElement;
-  private preview: HTMLElement;
+  private readonly host: HTMLElement;
+  private readonly preview: HTMLElement;
   private handle?: Handle;
   private cm?: EditorView;
   private mounted?: Mounted;
@@ -45,7 +45,7 @@ export class EditorPane {
 
   constructor(
     parent: HTMLElement,
-    private o: PaneOptions,
+    private readonly o: PaneOptions,
   ) {
     this.root = parent.createDiv({ cls: "fm-flow" });
     this.host = this.root.createDiv({ cls: "fm-flow-editor" });
@@ -93,7 +93,7 @@ export class EditorPane {
   }
 
   private start(): Promise<void> {
-    return (this.starting ??= (async () => {
+    this.starting ??= (async () => {
       const loader = this.o.loader;
       if (!loader) {
         if (!this.dead) this.startCodeMirror();
@@ -161,7 +161,8 @@ export class EditorPane {
             `Could not load the Rich Code Editor: ${(e as Error).message}`,
           );
       }
-    })());
+    })();
+    return this.starting;
   }
 
   private codeMirrorState(doc: string) {

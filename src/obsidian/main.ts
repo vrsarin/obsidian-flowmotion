@@ -70,11 +70,11 @@ class DiagramChild extends MarkdownRenderChild {
     readonly sourcePath: string,
     readonly blockEl: HTMLElement,
     readonly ctx: MarkdownPostProcessorContext,
-    private app: App,
-    private settings: Settings,
-    private cache: Map<string, Model>,
-    private registry: Set<DiagramChild>,
-    private onEdit: (c: DiagramChild) => void,
+    private readonly app: App,
+    private readonly settings: Settings,
+    private readonly cache: Map<string, Model>,
+    private readonly registry: Set<DiagramChild>,
+    private readonly onEdit: (c: DiagramChild) => void,
   ) {
     super(el);
   }
@@ -158,17 +158,7 @@ class DiagramChild extends MarkdownRenderChild {
   private async render() {
     try {
       const { text, view, from } = await this.readSource();
-      let model = this.cache.get(text);
-      if (!model) {
-        try {
-          model = await buildModel(text);
-        } catch (e) {
-          if (from && e instanceof DiagramError)
-            throw new DiagramError(e.problems.map((p) => `${from}: ${p}`));
-          throw e;
-        }
-        this.cache.set(text, model);
-      }
+      const model = await this.modelFor(text, from);
       this.containerEl.empty();
       const merged = { ...model.view, ...view }; // options in the block win over the file's
       const explicit = merged.paper; // set in the file or block; otherwise the setting for the current Obsidian theme applies
@@ -214,6 +204,20 @@ class DiagramChild extends MarkdownRenderChild {
         })
         .addEventListener("click", () => this.onEdit(this));
   }
+  private async modelFor(text: string, from?: string): Promise<Model> {
+    const cached = this.cache.get(text);
+    if (cached) return cached;
+    let model: Model;
+    try {
+      model = await buildModel(text);
+    } catch (e) {
+      if (from && e instanceof DiagramError)
+        throw new DiagramError(e.problems.map((p) => `${from}: ${p}`));
+      throw e;
+    }
+    this.cache.set(text, model);
+    return model;
+  }
   onload() {
     void this.start();
   }
@@ -226,10 +230,10 @@ class DiagramChild extends MarkdownRenderChild {
 
 export default class FlowMotionPlugin extends Plugin {
   settings: Settings = { ...DEFAULTS };
-  private cache = new Map<string, Model>();
-  private children = new Set<DiagramChild>();
+  private readonly cache = new Map<string, Model>();
+  private readonly children = new Set<DiagramChild>();
   private loader!: MonacoLoader;
-  private drawioServer = new StaticServer(
+  private readonly drawioServer = new StaticServer(
     this.app.vault.adapter,
     () => `${this.pluginDir}/${ADDONS.drawio.dir}`,
   );
@@ -494,7 +498,10 @@ export default class FlowMotionPlugin extends Plugin {
           (view): view is FlowView =>
             view instanceof FlowView && isDrawioName(view.file?.name),
         );
-      for (const view of views) await view.saveDrawioBeforeAddonRemoval();
+      await views.reduce(
+        (pending, view) => pending.then(() => view.saveDrawioBeforeAddonRemoval()),
+        Promise.resolve(),
+      );
       for (const view of views) view.retireDrawioPane();
       retiredViews = views;
     }
@@ -524,8 +531,9 @@ export default class FlowMotionPlugin extends Plugin {
     const join = (n: string) =>
       normalizePath(dir && dir !== "/" ? `${dir}/${n}` : n);
     let path = join("Untitled.drawio.flow");
-    for (let i = 1; this.app.vault.getAbstractFileByPath(path); i++)
-      path = join(`Untitled ${i}.drawio.flow`);
+    let i = 1;
+    while (this.app.vault.getAbstractFileByPath(path))
+      path = join(`Untitled ${i++}.drawio.flow`);
     await this.app.workspace
       .getLeaf(true)
       .openFile(await this.app.vault.create(path, BLANK_DRAWIO));
@@ -539,8 +547,9 @@ export default class FlowMotionPlugin extends Plugin {
     const join = (n: string) =>
       normalizePath(dir && dir !== "/" ? `${dir}/${n}` : n);
     let path = join("Untitled.flow");
-    for (let i = 1; this.app.vault.getAbstractFileByPath(path); i++)
-      path = join(`Untitled ${i}.flow`);
+    let i = 1;
+    while (this.app.vault.getAbstractFileByPath(path))
+      path = join(`Untitled ${i++}.flow`);
     return this.app.vault.create(path, FLOW_TEMPLATE);
   }
 
@@ -619,7 +628,7 @@ export default class FlowMotionPlugin extends Plugin {
 export class FlowMotionSettings extends PluginSettingTab {
   constructor(
     app: App,
-    private plugin: FlowMotionPlugin,
+    private readonly plugin: FlowMotionPlugin,
   ) {
     super(app, plugin);
   }

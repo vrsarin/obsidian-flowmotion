@@ -6,9 +6,11 @@ export function buildStoryTimeline(sb: Storyboard, tail = 1200): Timeline {
   const arrows = new Map(sb.elements.filter((e) => e.type === 'arrow').map((e) => [e.id, e]));
   const items: Item[] = [];
   const shows: Item[] = [], caps: Item[] = [];
+  const scenes: NonNullable<Timeline['scenes']> = [];
   const marks = new Set<number>([0]);
   let t = 0, n = 0;
   for (const sc of sb.scenes) {
+    const sceneStart = t;
     sc.beats.forEach((b, k) => {
       const dur = b.ms ?? sb.speed;
       const travel = b.edges.length ? Math.min(1200, dur * 0.45) : 0;
@@ -26,6 +28,7 @@ export function buildStoryTimeline(sb: Storyboard, tail = 1200): Timeline {
       }
       marks.add(t); marks.add(t + travel); t += dur; n++;
     });
+    scenes.push({ start: sceneStart, end: t, presentation: sc.presentation });
   }
   const total = t + tail;
   const chain = (list: Item[], key: (i: Item) => string) => {
@@ -35,5 +38,7 @@ export function buildStoryTimeline(sb: Storyboard, tail = 1200): Timeline {
   chain(shows, (i) => i.node!);
   chain(caps, () => 'cap');
   marks.add(total);
-  return { items, total, boundaries: [...marks].sort((a, b) => a - b) };
+  if (scenes.length) scenes.at(-1)!.end = total + 1;
+  return { items, total, boundaries: [...marks].sort((a, b) => a - b),
+    scenes: sb.scenes.some((scene) => scene.presentation !== undefined) ? scenes : undefined };
 }

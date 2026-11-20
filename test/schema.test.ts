@@ -103,6 +103,12 @@ describe('navigation', () => {
 import { parseEmbed, resolveVaultPath } from '../src/core/embed';
 describe('embedding files', () => {
   it('parses src with display options', () => expect(parseEmbed('src: ./d.yaml\nheight: 50vh\ncontrols: true\n')).toEqual({ src: './d.yaml', view: { height: '50vh', controls: true } }));
+  it('accepts and validates interactive playback for embeds and inline diagrams', () => {
+    expect(parseEmbed('src: ./d.flow\ninteractive: true\n')?.view.interactive).toBe(true);
+    expect(lintSource('src: ./d.flow\ninteractive: true\n')).toEqual([]);
+    expect(lintSource('nodes: [{ id: a }]\ninteractive: true\n')).toEqual([]);
+    expect(() => parseEmbed('src: ./d.flow\ninteractive: maybe\n')).toThrow(/interactive: use true or false/);
+  });
   it('ignores inline definitions', () => expect(parseEmbed('nodes:\n  - { id: a }\n')).toBeUndefined());
   it('rejects other keys and bad extensions', () => {
     expect(() => parseEmbed('src: ./d.txt\nnodes: []\n')).toThrow(/not allowed/);

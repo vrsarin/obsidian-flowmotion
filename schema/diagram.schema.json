@@ -410,6 +410,11 @@
       "type": "boolean",
       "description": "Show the playback control bar from the start."
     },
+    "interactive": {
+      "type": "boolean",
+      "description": "Wait for a button press to play each storyboard beat or event interval.",
+      "default": false
+    },
     "controlsPosition": {
       "type": "string",
       "enum": [

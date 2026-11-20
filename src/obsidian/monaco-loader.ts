@@ -20,10 +20,10 @@ init(monaco, yaml);
 /** Provides the bundled optional code editor on desktop and a safe fallback elsewhere. */
 export class MonacoLoader {
   private refs = 0;
-  private api: MonacoApi = { mount, purge };
+  private readonly api: MonacoApi = { mount, purge };
 
-  async installed(): Promise<boolean> {
-    return Platform.isDesktopApp;
+  installed(): Promise<boolean> {
+    return Promise.resolve(Platform.isDesktopApp);
   }
 
   async acquire(): Promise<MonacoApi> {

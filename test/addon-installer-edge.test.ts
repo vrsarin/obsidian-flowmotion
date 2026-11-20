@@ -7,7 +7,7 @@ import type { AddonSpec } from '../src/obsidian/addons';
 
 type Reply = { code?: number; location?: string; body?: Buffer | Buffer[]; error?: Error };
 const net = vi.hoisted(() => ({ replies: [] as any[], urls: [] as string[] }));
-vi.mock('https', () => ({
+vi.mock('node:https', () => ({
   get: (url: string, _o: object, cb: (r: any) => void) => {
     net.urls.push(url);
     const em = new EventEmitter();

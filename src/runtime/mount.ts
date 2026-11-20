@@ -1,6 +1,7 @@
 import { renderSvg } from '../render/svg';
+import { animatedSvg } from '../export/html';
 import type { Model } from '../render/model';
-import type { ThemeName } from '../render/theme';
+import { snapshotObsidianTheme, type ThemeName } from '../render/theme';
 import { Player } from './player';
 
 let counter = 0;
@@ -99,25 +100,9 @@ function pauseWhenHidden(win: Window & typeof globalThis, wrap: HTMLElement, pla
   return io;
 }
 
-/** Render a model into `container`, attach the player and controls. Call destroy() to release everything. */
-export function mountModel(container: HTMLElement, model: Model, opts: MountOptions = {}): Mounted {
+function screenMode(container: HTMLElement, wrap: HTMLElement, svg: SVGSVGElement, create: ElementFactory, model: Model, opts: MountOptions) {
   const doc = container.ownerDocument;
   const win = doc.defaultView ?? window;
-  // This runtime is only used inside Obsidian, whose DOM helpers are available
-  // on elements. Keep the optional factory for callers that need a specific
-  // Obsidian context, and use the container's helper by default.
-  const create: ElementFactory = opts.createEl ?? ((tag) => container.createEl(tag));
-  const prefix = `fm${++counter}`;
-  const wrap = create('div');
-  wrap.className = 'fm-wrap';
-  // Parse as XML and import the nodes: no HTML parsing and no innerHTML. renderSvg output is well-formed XML.
-  const parsed = new DOMParser().parseFromString(renderSvg(model, { idPrefix: prefix, theme: opts.theme ?? 'obsidian', transparent: (opts.theme ?? 'obsidian') === 'obsidian' }), 'image/svg+xml');
-  if (parsed.getElementsByTagName('parsererror').length) throw new Error('FlowMotion: the diagram produced invalid SVG');
-  wrap.replaceChildren(doc.importNode(parsed.documentElement, true));
-  const svg = wrap.querySelector('svg') as SVGSVGElement;
-  if (model.backdrop && model.view?.paper === 'none') svg.classList.add(doc.body.classList.contains('theme-dark') ? 'fm-paper-dark' : 'fm-paper-light');
-  container.appendChild(wrap);
-  if (model.view?.width) { wrap.style.setProperty('--fm-wrap-width', model.view.width); wrap.classList.add('fm-capped'); }
   const hv = opts.height ?? model.view?.height;
   type Mode = 'fit' | 'normal' | 'full';
   const inSlides = !!container.closest('.reveal'); // Obsidian Slides / Reveal.js: Normal may not fit a slide
@@ -156,14 +141,52 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   };
   doc.addEventListener('fullscreenchange', onFs);
   applyMode(mode);
+  return {
+    select: modeSel, inSlides,
+    refit: () => { if (inSlides && mode === 'fit') applyMode('fit'); },
+    destroy: () => doc.removeEventListener('fullscreenchange', onFs),
+  };
+}
 
-  const reduced = typeof win.matchMedia === 'function' && win.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function exportButton(create: ElementFactory, wrap: HTMLElement, model: Model, opts: MountOptions): HTMLButtonElement {
+  const win = wrap.ownerDocument.defaultView ?? window;
+  const exportError = create('div');
+  exportError.className = 'fm-error';
+  exportError.hidden = true;
+  exportError.setAttribute('role', 'alert');
+  wrap.appendChild(exportError);
+  return button(create, 'Export animated SVG', 'SVG ↓', () => {
+    exportError.hidden = true;
+    try {
+      const theme = opts.theme === 'light' || opts.theme === 'dark' ? opts.theme : snapshotObsidianTheme(wrap);
+      const blob = new Blob([animatedSvg(model, theme)], { type: 'image/svg+xml' });
+      const url = win.URL.createObjectURL(blob);
+      let link: HTMLAnchorElement | undefined;
+      try {
+        link = create('a');
+        link.href = url;
+        link.download = `${model.id.replace(/[^A-Za-z0-9_-]/g, '-')}.svg`;
+        link.click();
+      } finally {
+        link?.remove();
+        win.setTimeout(() => win.URL.revokeObjectURL(url), 1000);
+      }
+    } catch (error) {
+      console.error('FlowMotion: SVG export failed', error);
+      exportError.textContent = `SVG export failed: ${error instanceof Error ? error.message : String(error)}`;
+      exportError.hidden = false;
+    }
+  });
+}
+
+function playbackControls(create: ElementFactory, svg: SVGSVGElement, model: Model, opts: MountOptions, reduced: boolean) {
+  const interactive = model.view?.interactive === true;
   let player: Player;
-  const bar = create('div');
-  bar.className = 'fm-controls';
   const pb = create('div'); // playback controls, toggled by the button below
   pb.className = 'fm-pb';
   const playBtn = button(create, 'Play', '▶', () => player.toggle());
+  const nextBtn = button(create, 'Play next beat', 'Next ▶', () => player.playNext(reduced));
+  if (interactive) playBtn.remove(); else nextBtn.remove();
   const scrub = create('input');
   scrub.type = 'range'; scrub.className = 'fm-scrub'; scrub.min = '0'; scrub.value = '0';
   scrub.setAttribute('aria-label', 'Timeline');
@@ -175,6 +198,7 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   const sync = () => {
     playBtn.textContent = player.playing ? '⏸' : '▶';
     playBtn.setAttribute('aria-label', player.playing ? 'Pause' : 'Play');
+    nextBtn.disabled = player.playing || player.t >= player.total;
     scrub.value = String(Math.round(player.t));
     time.textContent = `${(player.t / 1000).toFixed(1)}s`;
   };
@@ -187,11 +211,11 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   }
   speed.addEventListener('change', () => player.setSpeed(Number(speed.value)));
   pb.append(
-    playBtn,
+    ...(interactive ? [] : [playBtn]),
     button(create, 'Step back', '⏮', () => player.stepBack()),
     button(create, 'Step forward', '⏭', () => player.stepForward()),
     button(create, 'Reset', '⏹', () => player.reset()),
-    button(create, 'Replay', '↻', () => player.replay()),
+    ...(interactive ? [] : [button(create, 'Replay', '↻', () => player.replay())]),
     scrub, time, speed,
   );
   const toggle = button(create, 'Show playback controls', '⚙', () => setControls(pb.hidden));
@@ -202,10 +226,46 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
     toggle.title = toggle.getAttribute('aria-label')!;
   };
   setControls(opts.controls === true);
-  svg.classList.add('fm-clickable');
-  svg.addEventListener('click', () => player.toggle()); // click the diagram to pause/play
+  if (!interactive) {
+    svg.classList.add('fm-clickable');
+    svg.addEventListener('click', () => player.toggle()); // click the diagram to pause/play
+  }
+  return { player, pb, toggle, nextBtn, sync };
+}
+
+function modelSvg(container: HTMLElement, create: ElementFactory, model: Model, opts: MountOptions) {
+  const doc = container.ownerDocument;
+  const prefix = `fm${++counter}`;
+  const wrap = create('div');
+  wrap.className = 'fm-wrap';
+  // Parse as XML and import the nodes: no HTML parsing and no innerHTML.
+  const theme = opts.theme ?? 'obsidian';
+  const parsed = new DOMParser().parseFromString(renderSvg(model, { idPrefix: prefix, theme, transparent: theme === 'obsidian' }), 'image/svg+xml');
+  if (parsed.getElementsByTagName('parsererror').length) throw new Error('FlowMotion: the diagram produced invalid SVG');
+  wrap.replaceChildren(doc.importNode(parsed.documentElement, true));
+  const svg = wrap.querySelector('svg') as SVGSVGElement;
+  if (model.backdrop && model.view?.paper === 'none') svg.classList.add(doc.body.classList.contains('theme-dark') ? 'fm-paper-dark' : 'fm-paper-light');
+  container.appendChild(wrap);
+  if (model.view?.width) { wrap.style.setProperty('--fm-wrap-width', model.view.width); wrap.classList.add('fm-capped'); }
+  return { wrap, svg };
+}
+
+/** Render a model into `container`, attach the player and controls. Call destroy() to release everything. */
+export function mountModel(container: HTMLElement, model: Model, opts: MountOptions = {}): Mounted {
+  const win = container.ownerDocument.defaultView ?? window;
+  // Obsidian factories may attach elements immediately; unused controls must be removed.
+  const create: ElementFactory = opts.createEl ?? ((tag) => container.createEl(tag));
+  const { wrap, svg } = modelSvg(container, create, model, opts);
+  const screen = screenMode(container, wrap, svg, create, model, opts);
+  const { inSlides, refit } = screen;
+  const reduced = typeof win.matchMedia === 'function' && win.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const interactive = model.view?.interactive === true;
+  const bar = create('div');
+  bar.className = 'fm-controls';
+  const { player, pb, toggle, nextBtn, sync } = playbackControls(create, svg, model, opts, reduced);
+  const exportBtn = exportButton(create, wrap, model, opts);
   // The toggle and screen mode are always visible, including in full screen.
-  const parts: HTMLElement[] = [pb, toggle, modeSel];
+  const parts: HTMLElement[] = [...(interactive ? [nextBtn] : []), pb, toggle, exportBtn, screen.select];
   if (model.backdrop && opts.onPaper) {
     parts.push(backgroundSelect(create, opts));
   }
@@ -215,13 +275,12 @@ export function mountModel(container: HTMLElement, model: Model, opts: MountOpti
   bar.classList.add(model.view?.controlsPosition === 'bottom' ? 'fm-bar-bottom' : 'fm-bar-top');
   sync();
 
-  const refit = () => { if (inSlides && mode === 'fit') applyMode('fit'); };
   const unscale = inSlides ? unscaleBarInSlide(win, wrap, bar, refit) : undefined;
   const io = pauseWhenHidden(win, wrap, () => player, refit);
 
-  if (reduced) player.seek(player.total); // reduced motion: show the finished state, no autoplay
-  else if (opts.autoplay ?? model.animation.autoplay) player.play();
+  if (!interactive && reduced) player.seek(player.total); // reduced motion: show the finished state, no autoplay
+  else if (!interactive && (opts.autoplay ?? model.animation.autoplay)) player.play();
   sync();
 
-  return { player, destroy() { unscale?.(); doc.removeEventListener("fullscreenchange", onFs); io?.disconnect(); player.destroy(); wrap.remove(); } };
+  return { player, destroy() { unscale?.(); screen.destroy(); io?.disconnect(); player.destroy(); wrap.remove(); } };
 }
